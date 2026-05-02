@@ -1,27 +1,21 @@
 /**
  * GameManager - Core Engine para Gerenciamento de Jogo de Turnos
- * Repsonsabilidades:
- * - Gerenciamento do Pool Dinâmico de Itens
- * - Distribuição Inicial
- * - Hot-Join Mid-Game
- * - Validação de Turnos
- * - Gerenciamento de Estado Global
  */
 
 import { FirestoreManager } from './FirestoreManager';
 import {
-    GameEvent,
-    GameEventType,
-    GameState,
-    Item,
-    ItemCategory,
-    ItemPoolConfig,
-    ItemRarity,
-    Player,
-    PlayerHand,
-    RoomConfig,
-    RoomType,
-    ValidationResult
+  GameEvent,
+  GameEventType,
+  GameState,
+  Item,
+  ItemCategory,
+  ItemPoolConfig,
+  ItemRarity,
+  Player,
+  PlayerHand,
+  RoomConfig,
+  RoomType,
+  ValidationResult,
 } from './types';
 
 export class GameManager {
@@ -36,7 +30,7 @@ export class GameManager {
     roomId: string,
     hostId: string,
     roomType: RoomType,
-    maxPlayers: number = 6
+    maxPlayers: number = 12
   ) {
     this.roomId = roomId;
     this.roomType = roomType;
@@ -68,48 +62,32 @@ export class GameManager {
     this.initializeItemPool();
   }
 
-  /**
-   * ============= POOL MANAGEMENT =============
-   */
-
-  /**
-   * Calcula a configuração do pool baseado no número máximo de jogadores
-   * Fórmula: Cada jogador recebe ~10 itens + buffer para descartes
-   */
   private calculateItemPoolConfig(maxPlayers: number): ItemPoolConfig {
     const itemsPerPlayer = 10;
-    const discardBuffer = Math.ceil(maxPlayers * 2); // Buffer para descartes
+    const discardBuffer = Math.ceil(maxPlayers * 2);
     const totalItems = maxPlayers * itemsPerPlayer + discardBuffer;
 
     const categories: ItemCategory[] = ['espadas', 'ouro', 'copas', 'paus'];
     const itemsPerCategory = Math.ceil(totalItems / categories.length);
 
-    const categoryDistribution: Record<ItemCategory, number> = {
-      espadas: itemsPerCategory,
-      ouro: itemsPerCategory,
-      copas: itemsPerCategory,
-      paus: itemsPerCategory,
-    };
-
-    const rarityDistribution: Record<ItemRarity, number> = {
-      comum: Math.ceil(totalItems * 0.5),
-      raro: Math.ceil(totalItems * 0.3),
-      épico: Math.ceil(totalItems * 0.15),
-      lendário: Math.ceil(totalItems * 0.05),
-    };
-
     return {
       maxPlayers,
       totalItems,
-      categoriesDistribution: categoryDistribution,
-      rarityDistribution,
+      categoriesDistribution: {
+        espadas: itemsPerCategory,
+        ouro: itemsPerCategory,
+        copas: itemsPerCategory,
+        paus: itemsPerCategory,
+      },
+      rarityDistribution: {
+        comum: Math.ceil(totalItems * 0.5),
+        raro: Math.ceil(totalItems * 0.3),
+        épico: Math.ceil(totalItems * 0.15),
+        lendário: Math.ceil(totalItems * 0.05),
+      },
     };
   }
 
-  /**
-   * Inicializa o pool completo de itens baseado na configuração
-   * Garante distribuição uniforme entre categorias
-   */
   private initializeItemPool(): Item[] {
     const items: Item[] = [];
     let itemId = 0;
@@ -118,20 +96,18 @@ export class GameManager {
     const rarities: ItemRarity[] = ['comum', 'raro', 'épico', 'lendário'];
 
     categories.forEach((category) => {
-      const itemsInCategory =
-        this.itemPoolConfig.categoriesDistribution[category];
+      const itemsInCategory = this.itemPoolConfig.categoriesDistribution[category];
 
       for (let i = 0; i < itemsInCategory; i++) {
-        const value = (i % 12) + 1; // Valores de 1-12
-        const rarity =
-          rarities[Math.floor((itemId * 2.7) % rarities.length)]; // Distribuição pseudo-aleatória
+        const value = (i % 12) + 1;
+        const rarity = rarities[Math.floor((itemId * 2.7) % rarities.length)];
 
         items.push({
           id: `item_${itemId}`,
           name: `${category.charAt(0).toUpperCase() + category.slice(1)} ${value}`,
           category,
           value,
-          rarity: rarity as ItemRarity,
+          rarity,
           isTrump: false,
         });
 
@@ -139,34 +115,119 @@ export class GameManager {
       }
     });
 
-    // Embaralhar o pool
     this.gameState.itemPool = this.shuffleArray(items);
     return this.gameState.itemPool;
   }
 
-  /**
-   * Embaralha um array (Fisher-Yates)
-   */
   private shuffleArray<T>(array: T[]): T[] {
     const shuffled = [...array];
+
     for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor((i * 9301 + 49297) % 233280) % (i + 1);
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
+
     return shuffled;
   }
 
-  /**
-   * Distribui itens iniciais para todos os jogadores
-   */
+  private serializeItem(item: Item) {
+    return {
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      value: item.value,
+      rarity: item.rarity,
+      isTrump: Boolean(item.isTrump),
+    };
+  }
+
+  private serializePlayer(player: Player) {
+    return {
+      id: player.id,
+      name: player.name || 'Jogador',
+      email: player.email || '',
+      phone: player.phone || '',
+      profileImage: player.profileImage || null,
+      joinedAt: player.joinedAt || new Date(),
+      isActive: Boolean(player.isActive),
+      isMidGameJoin: Boolean((player as any).isMidGameJoin),
+    };
+  }
+
+  private serializeTurn(turn: any) {
+    const playedCards: Record<string, any> = {};
+
+    if (turn?.playedCards instanceof Map) {
+      turn.playedCards.forEach((card: Item, playerId: string) => {
+        playedCards[playerId] = this.serializeItem(card);
+      });
+    }
+
+    const data: any = {
+      roundNumber: turn.roundNumber,
+      turnNumber: turn.turnNumber,
+      leaderId: turn.leaderId,
+      playedCards,
+      timestamp: turn.timestamp || new Date(),
+    };
+
+    if (turn.trumpCategory) {
+      data.trumpCategory = turn.trumpCategory;
+    }
+
+    if (turn.winnerPlayerId) {
+      data.winnerPlayerId = turn.winnerPlayerId;
+    }
+
+    return data;
+  }
+
+  private getSerializableGameState() {
+    return {
+      roomId: this.gameState.roomId,
+      roomConfig: {
+        roomId: this.gameState.roomConfig.roomId,
+        roomType: this.gameState.roomConfig.roomType,
+        hostId: this.gameState.roomConfig.hostId,
+        maxPlayers: this.gameState.roomConfig.maxPlayers,
+        currentPlayers: this.gameState.roomConfig.currentPlayers,
+        status: this.gameState.roomConfig.status,
+        createdAt: this.gameState.roomConfig.createdAt || new Date(),
+        ...(this.gameState.roomConfig.startedAt
+          ? { startedAt: this.gameState.roomConfig.startedAt }
+          : {}),
+        ...(this.gameState.roomConfig.endedAt
+          ? { endedAt: this.gameState.roomConfig.endedAt }
+          : {}),
+      },
+      players: Array.from(this.gameState.players.values()).map((player) =>
+        this.serializePlayer(player)
+      ),
+      playerHands: Array.from(this.gameState.playerHands.entries()).map(
+        ([playerId, hand]) => ({
+          playerId,
+          items: hand.items.map((item) => this.serializeItem(item)),
+          isLeader: Boolean(hand.isLeader),
+          score: hand.score || 0,
+        })
+      ),
+      itemPool: this.gameState.itemPool.map((item) => this.serializeItem(item)),
+      currentTurn: this.gameState.currentTurn
+        ? this.serializeTurn(this.gameState.currentTurn)
+        : null,
+      turns: this.gameState.turns.map((turn) => this.serializeTurn(turn)),
+      round: this.gameState.round,
+      gameHistory: this.gameState.gameHistory || [],
+      status: this.gameState.status,
+      rankings: this.gameState.rankings || [],
+    };
+  }
+
   distributeInitialCards(): void {
     const itemsPerPlayer = 10;
 
     Array.from(this.gameState.players.keys()).forEach((playerId) => {
-      const playerItems = this.gameState.itemPool.splice(
-        0,
-        itemsPerPlayer
-      );
+      const playerItems = this.gameState.itemPool.splice(0, itemsPerPlayer);
 
       this.gameState.playerHands.set(playerId, {
         playerId,
@@ -183,18 +244,10 @@ export class GameManager {
     });
   }
 
-  /**
-   * ============= HOT-JOIN MID-GAME =============
-   */
-
-  /**
-   * Permite que um jogador entre no meio do jogo
-   * Recebe itens do pool restante
-   */
   joinMidGame(player: Player): void {
-    // Validação
-    if (this.gameState.roomConfig.currentPlayers >=
-      this.gameState.roomConfig.maxPlayers) {
+    if (
+      this.gameState.roomConfig.currentPlayers >= this.gameState.roomConfig.maxPlayers
+    ) {
       throw new Error('Sala cheia. Não é possível entrar.');
     }
 
@@ -205,7 +258,6 @@ export class GameManager {
       throw new Error('Jogador já está na sala.');
     }
 
-    // Adicionar jogador
     this.gameState.players.set(player.id, {
       ...player,
       joinedAt: new Date(),
@@ -213,8 +265,7 @@ export class GameManager {
       isMidGameJoin: true,
     });
 
-    // Distribuir itens do que restou no pool
-    const itemsPerPlayer = 5; // Menos itens para quem entra no meio
+    const itemsPerPlayer = 5;
     const playerItems = this.gameState.itemPool.splice(
       0,
       Math.min(itemsPerPlayer, this.gameState.itemPool.length)
@@ -237,27 +288,15 @@ export class GameManager {
     });
   }
 
-  /**
-   * ============= TURN VALIDATION =============
-   */
-
-  /**
-   * Valida se um card pode ser jogado neste turno
-   * Regras:
-   * 1. Se há cards da categoria puxada, DEVE jogar dessa categoria
-   * 2. Se não há, pode jogar um trunfo
-   * 3. Se não há trunfo, pode descartar
-   */
-  validateCardPlay(
-    playerId: string,
-    cardId: string
-  ): ValidationResult {
+  validateCardPlay(playerId: string, cardId: string): ValidationResult {
     const hand = this.gameState.playerHands.get(playerId);
+
     if (!hand) {
       return { isValid: false, reason: 'Jogador não encontrado' };
     }
 
     const card = hand.items.find((item) => item.id === cardId);
+
     if (!card) {
       return {
         isValid: false,
@@ -265,7 +304,6 @@ export class GameManager {
       };
     }
 
-    // Se é o líder do turno, pode jogar qualquer coisa e define a categoria
     if (this.gameState.currentTurn.leaderId === playerId) {
       return {
         isValid: true,
@@ -274,15 +312,12 @@ export class GameManager {
       };
     }
 
-    // Se não é o líder
     const trumpCategory = this.gameState.currentTurn.trumpCategory;
 
-    // Verifica se tem cards da categoria puxada
     const hasCardOfCategory = hand.items.some(
       (item) => item.category === trumpCategory
     );
 
-    // Se tem card da categoria, DEVE jogar essa categoria
     if (hasCardOfCategory && card.category !== trumpCategory) {
       return {
         isValid: false,
@@ -291,9 +326,9 @@ export class GameManager {
       };
     }
 
-    // Se não tem da categoria, verifica trunfo
     if (!hasCardOfCategory && card.isTrump === false) {
       const hasTrump = hand.items.some((item) => item.isTrump);
+
       if (hasTrump) {
         return {
           isValid: false,
@@ -306,11 +341,9 @@ export class GameManager {
     return { isValid: true };
   }
 
-  /**
-   * Processa o card jogado
-   */
   playCard(playerId: string, cardId: string): void {
     const validation = this.validateCardPlay(playerId, cardId);
+
     if (!validation.isValid) {
       throw new Error(validation.reason);
     }
@@ -319,24 +352,21 @@ export class GameManager {
     const cardIndex = hand!.items.findIndex((item) => item.id === cardId);
     const card = hand!.items.splice(cardIndex, 1)[0];
 
-    // Se é o líder e primeira carta, define a categoria
-    if (this.gameState.currentTurn.leaderId === playerId &&
-      this.gameState.currentTurn.playedCards.size === 0) {
+    if (
+      this.gameState.currentTurn.leaderId === playerId &&
+      this.gameState.currentTurn.playedCards.size === 0
+    ) {
       this.gameState.currentTurn.trumpCategory = card.category;
     }
 
     this.gameState.currentTurn.playedCards.set(playerId, card);
 
-    // Sincronizar com Firestore
     if (this.currentTurnId) {
-      FirestoreManager.playCard(
-        this.roomId,
-        this.currentTurnId,
-        playerId,
-        card
-      ).catch(error => {
-        console.error('Erro ao registrar jogada no Firestore:', error);
-      });
+      FirestoreManager.playCard(this.roomId, this.currentTurnId, playerId, card).catch(
+        (error) => {
+          console.error('Erro ao registrar jogada no Firestore:', error);
+        }
+      );
     }
 
     this.emit('card_played', {
@@ -347,13 +377,6 @@ export class GameManager {
     });
   }
 
-  /**
-   * ============= TURN MANAGEMENT =============
-   */
-
-  /**
-   * Inicia um novo turno
-   */
   startTurn(leaderId: string, trumpCategory?: ItemCategory): void {
     this.gameState.currentTurn = {
       roundNumber: this.gameState.round,
@@ -364,11 +387,13 @@ export class GameManager {
       timestamp: new Date(),
     };
 
-    // Sincronizar com Firestore
     this.currentTurnId = `turn_${this.gameState.round}_${Date.now()}`;
-    FirestoreManager.createTurn(this.roomId, this.gameState.currentTurn).catch(error => {
-      console.error('Erro ao criar turno no Firestore:', error);
-    });
+
+    FirestoreManager.createTurn(this.roomId, this.gameState.currentTurn).catch(
+      (error) => {
+        console.error('Erro ao criar turno no Firestore:', error);
+      }
+    );
 
     this.emit('turn_started', {
       leaderId,
@@ -376,9 +401,6 @@ export class GameManager {
     });
   }
 
-  /**
-   * Encerra o turno e determina o vencedor
-   */
   endTurn(): string {
     let winnerPlayerId = this.gameState.currentTurn.leaderId;
     let winningCard = this.gameState.currentTurn.playedCards.get(winnerPlayerId);
@@ -387,19 +409,15 @@ export class GameManager {
       throw new Error('Nenhum card foi jogado');
     }
 
-    // Compara todos os cards para encontrar o vencedor
     this.gameState.currentTurn.playedCards.forEach((card, playerId) => {
       if (playerId === this.gameState.currentTurn.leaderId) return;
 
-      if (!winningCard) return; // Double check for TypeScript
+      if (!winningCard) return;
 
-      // Trunfo vence tudo
       if (card.isTrump && !winningCard.isTrump) {
         winnerPlayerId = playerId;
         winningCard = card;
-      }
-      // Mesma categoria: maior valor vence
-      else if (
+      } else if (
         card.category === winningCard.category &&
         card.value > winningCard.value
       ) {
@@ -408,8 +426,8 @@ export class GameManager {
       }
     });
 
-    // Atualizar score
     const winnerHand = this.gameState.playerHands.get(winnerPlayerId);
+
     if (winnerHand) {
       winnerHand.score += this.calculateRoundScore(
         this.gameState.currentTurn.playedCards
@@ -419,8 +437,8 @@ export class GameManager {
     this.gameState.currentTurn.winnerPlayerId = winnerPlayerId;
     this.gameState.turns.push(this.gameState.currentTurn);
 
-    // Sincronizar com Firestore
     const scores = new Map<string, number>();
+
     this.gameState.playerHands.forEach((hand, playerId) => {
       scores.set(playerId, hand.score);
     });
@@ -431,7 +449,7 @@ export class GameManager {
         this.currentTurnId,
         winnerPlayerId,
         scores
-      ).catch(error => {
+      ).catch((error) => {
         console.error('Erro ao finalizar turno no Firestore:', error);
       });
     }
@@ -445,23 +463,22 @@ export class GameManager {
     return winnerPlayerId;
   }
 
-  /**
-   * Calcula o score de uma rodada baseado nos values dos cards
-   */
   private calculateRoundScore(playedCards: Map<string, Item>): number {
     let score = 0;
+
     playedCards.forEach((card) => {
       score += card.value;
     });
+
     return score;
   }
 
-  /**
-   * ============= STATE GETTERS =============
-   */
-
   getGameState(): GameState {
     return this.gameState;
+  }
+
+  getSerializableState(): any {
+    return this.getSerializableGameState();
   }
 
   getPlayerHand(playerId: string): PlayerHand | undefined {
@@ -476,11 +493,11 @@ export class GameManager {
     return this.gameState.roomConfig;
   }
 
-  /**
-   * ============= PLAYER MANAGEMENT =============
-   */
-
   addPlayer(player: Player): void {
+    if (this.gameState.players.has(player.id)) {
+      return;
+    }
+
     if (this.gameState.players.size >= this.gameState.roomConfig.maxPlayers) {
       throw new Error('Sala cheia.');
     }
@@ -493,14 +510,6 @@ export class GameManager {
 
     this.gameState.roomConfig.currentPlayers++;
 
-    // Sincronizar com Firestore
-    if (this.gameState.status === 'waiting') {
-      // Sala ainda no lobby
-      FirestoreManager.joinRoom(this.roomId, player).catch(error => {
-        console.error('Erro ao sincronizar player no Firestore:', error);
-      });
-    }
-
     this.emit('player_joined', {
       playerId: player.id,
       playerName: player.name,
@@ -510,6 +519,7 @@ export class GameManager {
 
   removePlayer(playerId: string): void {
     const player = this.gameState.players.get(playerId);
+
     if (player) {
       player.isActive = false;
       this.gameState.roomConfig.currentPlayers--;
@@ -521,10 +531,6 @@ export class GameManager {
       });
     }
   }
-
-  /**
-   * ============= GAME LIFECYCLE =============
-   */
 
   startGame(): void {
     if (this.gameState.players.size < 2) {
@@ -538,14 +544,14 @@ export class GameManager {
 
     this.distributeInitialCards();
 
-    // Sincronizar com Firestore
-    FirestoreManager.startGame(this.roomId, this.gameState).catch(error => {
-      console.error('Erro ao iniciar jogo no Firestore:', error);
-    });
-
-    // Define o primeiro líder (primeira pessoa a se juntar)
     const firstPlayerId = Array.from(this.gameState.players.keys())[0];
     this.startTurn(firstPlayerId);
+
+    FirestoreManager.startGame(this.roomId, this.getSerializableGameState() as any).catch(
+      (error) => {
+        console.error('Erro ao iniciar jogo no Firestore:', error);
+      }
+    );
 
     this.emit('game_finished', {
       status: 'started',
@@ -558,7 +564,6 @@ export class GameManager {
     this.gameState.roomConfig.status = 'finished';
     this.gameState.roomConfig.endedAt = new Date();
 
-    // Calcular rankings finais
     const rankings = Array.from(this.gameState.playerHands.values())
       .sort((a, b) => b.score - a.score)
       .map((hand, index) => ({
@@ -575,19 +580,17 @@ export class GameManager {
     });
   }
 
-  /**
-   * ============= EVENT SYSTEM =============
-   */
-
   on(eventType: GameEventType, handler: Function): void {
     if (!this.eventListeners.has(eventType)) {
       this.eventListeners.set(eventType, []);
     }
+
     this.eventListeners.get(eventType)!.push(handler);
   }
 
   private emit(eventType: GameEventType, data: any): void {
     const handlers = this.eventListeners.get(eventType) || [];
+
     handlers.forEach((handler) => {
       try {
         handler({

@@ -4,18 +4,20 @@
  */
 
 import {
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    getFirestore,
-    onSnapshot,
-    setDoc,
-    Timestamp,
-    updateDoc,
-    writeBatch
+  Timestamp,
+  arrayRemove,
+  arrayUnion,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  getFirestore,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
-import { GameState, Item, Player, RoomConfig, Turn } from './types';
+import { GameState, Item, Player, RoomConfig } from './types';
 
 export interface FirestoreRoomData {
   roomId: string;
@@ -24,8 +26,8 @@ export interface FirestoreRoomData {
   createdAt: any;
   status: 'looking_for_players' | 'in_progress' | 'finished';
   maxPlayers: number;
-  players: string[]; // Array de UserIds
-  gameState?: GameState;
+  players: string[];
+  gameState?: any;
 }
 
 export interface FirestorePlayerData {
@@ -50,9 +52,199 @@ export interface FirestoreTurnData {
 export class FirestoreManager {
   private static db = getFirestore();
 
-  /**
-   * Cria uma nova sala no Firestore
-   */
+  private static clean(value: any): any {
+    if (value === undefined) return null;
+
+    if (value instanceof Date) return value;
+
+    if (value instanceof Timestamp) return value;
+
+    if (Array.isArray(value)) {
+      return value.map((item) => this.clean(item));
+    }
+
+    if (value instanceof Map) {
+      const objectValue: Record<string, any> = {};
+
+      value.forEach((mapValue, mapKey) => {
+        objectValue[String(mapKey)] = this.clean(mapValue);
+      });
+
+      return objectValue;
+    }
+
+    if (value && typeof value === 'object') {
+      const result: Record<string, any> = {};
+
+      Object.entries(value).forEach(([key, val]) => {
+        if (val !== undefined) {
+          result[key] = this.clean(val);
+        }
+      });
+
+      return result;
+    }
+
+    return value;
+  }
+
+  private static serializeItem(item: any) {
+    return this.clean({
+      id: item?.id || '',
+      name: item?.name || '',
+      category: item?.category || '',
+      value: Number(item?.value || 0),
+      rarity: item?.rarity || 'comum',
+      isTrump: Boolean(item?.isTrump),
+    });
+  }
+
+  private static serializePlayer(player: any) {
+    return this.clean({
+      id: player?.id || player?.userId || '',
+      userId: player?.userId || player?.id || '',
+      name: player?.name || 'Jogador',
+      email: player?.email || '',
+      phone: player?.phone || '',
+      profileImage: player?.profileImage || null,
+      joinedAt: player?.joinedAt || Timestamp.now(),
+      isActive: player?.isActive !== false,
+      isMidGameJoin: Boolean(player?.isMidGameJoin),
+    });
+  }
+
+  private static serializePlayedCards(playedCards: any): Record<string, any> {
+    const serialized: Record<string, any> = {};
+
+    if (!playedCards) {
+      return serialized;
+    }
+
+    if (playedCards instanceof Map) {
+      playedCards.forEach((card: any, playerId: string) => {
+        serialized[String(playerId)] = this.serializeItem(card);
+      });
+
+      return serialized;
+    }
+
+    if (Array.isArray(playedCards)) {
+      playedCards.forEach((entry: any, index: number) => {
+        if (entry?.playerId && entry?.card) {
+          serialized[String(entry.playerId)] = this.serializeItem(entry.card);
+        } else if (Array.isArray(entry) && entry.length >= 2) {
+          serialized[String(entry[0])] = this.serializeItem(entry[1]);
+        } else {
+          serialized[String(index)] = this.serializeItem(entry);
+        }
+      });
+
+      return serialized;
+    }
+
+    if (typeof playedCards === 'object') {
+      Object.entries(playedCards).forEach(([playerId, card]) => {
+        serialized[String(playerId)] = this.serializeItem(card);
+      });
+
+      return serialized;
+    }
+
+    return serialized;
+  }
+
+  private static serializeTurn(turn: any): any {
+    if (!turn) {
+      return null;
+    }
+
+    const serialized = {
+      roundNumber: Number(turn.roundNumber || turn.round || 1),
+      turnNumber: Number(turn.turnNumber || 1),
+      leaderId: String(turn.leaderId || ''),
+      playedCards: this.serializePlayedCards(turn.playedCards),
+      timestamp: turn.timestamp || Timestamp.now(),
+      ...(turn.trumpCategory ? { trumpCategory: turn.trumpCategory } : {}),
+      ...(turn.winnerPlayerId ? { winnerPlayerId: turn.winnerPlayerId } : {}),
+      ...(turn.winnerId ? { winnerId: turn.winnerId } : {}),
+    };
+
+    return this.clean(serialized);
+  }
+
+  private static serializeGameState(gameState: any) {
+    const players =
+      gameState?.players instanceof Map
+        ? Array.from(gameState.players.values()).map((player: any) =>
+          this.serializePlayer(player)
+        )
+        : Array.isArray(gameState?.players)
+          ? gameState.players.map((player: any) => this.serializePlayer(player))
+          : [];
+
+    const playerHands =
+      gameState?.playerHands instanceof Map
+        ? Array.from(gameState.playerHands.entries()).map(([playerId, hand]: any) =>
+          this.clean({
+            playerId,
+            items: Array.isArray(hand?.items)
+              ? hand.items.map((item: any) => this.serializeItem(item))
+              : [],
+            isLeader: Boolean(hand?.isLeader),
+            score: Number(hand?.score || 0),
+          })
+        )
+        : Array.isArray(gameState?.playerHands)
+          ? gameState.playerHands.map((hand: any) =>
+            this.clean({
+              playerId: hand?.playerId || '',
+              items: Array.isArray(hand?.items)
+                ? hand.items.map((item: any) => this.serializeItem(item))
+                : [],
+              isLeader: Boolean(hand?.isLeader),
+              score: Number(hand?.score || 0),
+            })
+          )
+          : [];
+
+    const turns = Array.isArray(gameState?.turns)
+      ? gameState.turns.map((turn: any) => this.serializeTurn(turn)).filter(Boolean)
+      : [];
+
+    const serializable = {
+      roomId: gameState?.roomId || '',
+      roomConfig: {
+        roomId: gameState?.roomConfig?.roomId || gameState?.roomId || '',
+        roomType: gameState?.roomConfig?.roomType || 'waiting_room',
+        hostId: gameState?.roomConfig?.hostId || '',
+        maxPlayers: Number(gameState?.roomConfig?.maxPlayers || 12),
+        currentPlayers: Number(
+          gameState?.roomConfig?.currentPlayers || players.length || 0
+        ),
+        status: gameState?.roomConfig?.status || 'playing',
+        createdAt: gameState?.roomConfig?.createdAt || Timestamp.now(),
+        startedAt: gameState?.roomConfig?.startedAt || Timestamp.now(),
+      },
+      players,
+      playerHands,
+      itemPool: Array.isArray(gameState?.itemPool)
+        ? gameState.itemPool.map((item: any) => this.serializeItem(item))
+        : [],
+      currentTurn: gameState?.currentTurn
+        ? this.serializeTurn(gameState.currentTurn)
+        : null,
+      turns,
+      round: Number(gameState?.round || 1),
+      gameHistory: Array.isArray(gameState?.gameHistory)
+        ? gameState.gameHistory
+        : [],
+      status: gameState?.status || 'active',
+      rankings: Array.isArray(gameState?.rankings) ? gameState.rankings : [],
+    };
+
+    return this.clean(serializable);
+  }
+
   static async createRoom(
     roomId: string,
     config: RoomConfig,
@@ -65,11 +257,12 @@ export class FirestoreManager {
         createdBy: userId,
         createdAt: Timestamp.now(),
         status: 'looking_for_players',
-        maxPlayers: config.maxPlayers || 6,
+        maxPlayers: Number(config.maxPlayers || 12),
         players: [userId],
       };
 
-      await setDoc(doc(this.db, 'rooms', roomId), roomData);
+      await setDoc(doc(this.db, 'rooms', roomId), roomData, { merge: true });
+
       console.log('✅ Room criada no Firestore:', roomId);
     } catch (error) {
       console.error('❌ Erro ao criar room:', error);
@@ -77,37 +270,80 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Jogador entra em uma sala existente
-   */
-  static async joinRoom(roomId: string, player: Player): Promise<void> {
+  static async syncHostPlayer(roomId: string, player: Player): Promise<void> {
     try {
       const roomRef = doc(this.db, 'rooms', roomId);
+      const roomSnap = await getDoc(roomRef);
 
-      // Atualizar lista de players
-      await updateDoc(roomRef, {
-        players: `rooms.${roomId}.players.append(['${player.id}'])`,
-      });
+      if (!roomSnap.exists()) {
+        throw new Error(`Sala ${roomId} ainda não existe para sincronizar o host.`);
+      }
 
-      // Criar documento do player
-      const playerRef = doc(
-        this.db,
-        'rooms',
-        roomId,
-        'players',
-        player.id
-      );
+      const playerRef = doc(this.db, 'rooms', roomId, 'players', player.id);
+
       const playerData: FirestorePlayerData = {
         userId: player.id,
         name: player.name,
         email: player.email || '',
-        phone: player.phone,
+        phone: player.phone || '',
+        joinedAt: Timestamp.now(),
+        score: 0,
+        isReady: true,
+      };
+
+      await setDoc(playerRef, playerData, { merge: true });
+
+      await updateDoc(roomRef, {
+        players: arrayUnion(player.id),
+      });
+
+      console.log('✅ Host sincronizado como player:', player.name);
+    } catch (error) {
+      console.error('❌ Erro ao sincronizar host:', error);
+      throw error;
+    }
+  }
+
+  static async joinRoom(roomId: string, player: Player): Promise<void> {
+    try {
+      const roomRef = doc(this.db, 'rooms', roomId);
+      const roomSnap = await getDoc(roomRef);
+
+      if (!roomSnap.exists()) {
+        throw new Error(`Sala ${roomId} não encontrada.`);
+      }
+
+      const roomData = roomSnap.data() as FirestoreRoomData;
+
+      if (roomData.status !== 'looking_for_players') {
+        throw new Error('Essa sala já iniciou ou foi encerrada.');
+      }
+
+      const players = Array.isArray(roomData.players) ? roomData.players : [];
+      const isAlreadyInRoom = players.includes(player.id);
+
+      if (players.length >= roomData.maxPlayers && !isAlreadyInRoom) {
+        throw new Error('Essa sala está cheia.');
+      }
+
+      const playerRef = doc(this.db, 'rooms', roomId, 'players', player.id);
+
+      const playerData: FirestorePlayerData = {
+        userId: player.id,
+        name: player.name,
+        email: player.email || '',
+        phone: player.phone || '',
         joinedAt: Timestamp.now(),
         score: 0,
         isReady: false,
       };
 
-      await setDoc(playerRef, playerData);
+      await setDoc(playerRef, playerData, { merge: true });
+
+      await updateDoc(roomRef, {
+        players: arrayUnion(player.id),
+      });
+
       console.log('✅ Player entrou na sala:', player.name);
     } catch (error) {
       console.error('❌ Erro ao entrar na sala:', error);
@@ -115,20 +351,19 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Iniciar jogo - guardar estado inicial no Firestore
-   */
-  static async startGame(roomId: string, gameState: GameState): Promise<void> {
+  static async startGame(roomId: string, gameState: GameState | any): Promise<void> {
     try {
       const roomRef = doc(this.db, 'rooms', roomId);
+      const serializableGameState = this.serializeGameState(gameState);
 
       await updateDoc(roomRef, {
         status: 'in_progress',
-        gameState: gameState, // Salvar estado completo
+        gameState: serializableGameState,
       });
 
-      // Criar primeiro turno
-      await this.createTurn(roomId, gameState.currentTurn);
+      if (serializableGameState.currentTurn) {
+        await this.createTurn(roomId, serializableGameState.currentTurn);
+      }
 
       console.log('✅ Jogo iniciado no Firestore');
     } catch (error) {
@@ -137,23 +372,29 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Criar novo turno
-   */
-  static async createTurn(roomId: string, turn: Turn): Promise<void> {
+  static async createTurn(roomId: string, turn: any): Promise<void> {
     try {
-      const turnId = `turn_${turn.roundNumber}_${Date.now()}`;
+      const serializedTurn = this.serializeTurn(turn);
+      const turnId = `turn_${serializedTurn?.roundNumber || 1}_${Date.now()}`;
       const turnRef = doc(this.db, 'rooms', roomId, 'turns', turnId);
 
       const turnData: FirestoreTurnData = {
-        leaderId: turn.leaderId,
-        round: turn.roundNumber,
-        trumpCategory: turn.trumpCategory,
-        playedCards: {},
+        leaderId: serializedTurn?.leaderId || '',
+        round: Number(serializedTurn?.roundNumber || 1),
+        playedCards: serializedTurn?.playedCards || {},
         timestamp: Timestamp.now(),
       };
 
-      await setDoc(turnRef, turnData);
+      if (serializedTurn?.trumpCategory) {
+        turnData.trumpCategory = serializedTurn.trumpCategory;
+      }
+
+      if (serializedTurn?.winnerId) {
+        turnData.winnerId = serializedTurn.winnerId;
+      }
+
+      await setDoc(turnRef, this.clean(turnData));
+
       console.log('✅ Turno criado:', turnId);
     } catch (error) {
       console.error('❌ Erro ao criar turno:', error);
@@ -161,9 +402,6 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Registrar carta jogada pelo jogador
-   */
   static async playCard(
     roomId: string,
     turnId: string,
@@ -174,14 +412,7 @@ export class FirestoreManager {
       const turnRef = doc(this.db, 'rooms', roomId, 'turns', turnId);
 
       await updateDoc(turnRef, {
-        [`playedCards.${playerId}`]: {
-          id: card.id,
-          name: card.name,
-          category: card.category,
-          value: card.value,
-          rarity: card.rarity,
-          isTrump: card.isTrump,
-        },
+        [`playedCards.${playerId}`]: this.serializeItem(card),
       });
 
       console.log('✅ Carta registrada:', card.name);
@@ -191,9 +422,6 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Finalizar turno e calcular vencedor
-   */
   static async endTurn(
     roomId: string,
     turnId: string,
@@ -204,20 +432,20 @@ export class FirestoreManager {
       const turnRef = doc(this.db, 'rooms', roomId, 'turns', turnId);
       const batch = writeBatch(this.db);
 
-      // Atualizar turno com vencedor
       batch.update(turnRef, {
-        winnerId: winnerId,
+        winnerId,
       });
 
-      // Atualizar scoreboards dos players
       for (const [playerId, score] of scores) {
         const playerRef = doc(this.db, 'rooms', roomId, 'players', playerId);
+
         batch.update(playerRef, {
-          score: score,
+          score,
         });
       }
 
       await batch.commit();
+
       console.log('✅ Turno finalizado:', winnerId, 'venceu');
     } catch (error) {
       console.error('❌ Erro ao finalizar turno:', error);
@@ -225,20 +453,13 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Finalizar jogo
-   */
-  static async finishGame(
-    roomId: string,
-    rankings: Player[]
-  ): Promise<void> {
+  static async finishGame(roomId: string, rankings: Player[]): Promise<void> {
     try {
       const roomRef = doc(this.db, 'rooms', roomId);
 
       await updateDoc(roomRef, {
         status: 'finished',
-        'gameState.rankings': rankings,
-        'gameState.isGameFinished': true,
+        rankings,
       });
 
       console.log('✅ Jogo finalizado');
@@ -248,10 +469,6 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Listener em tempo real para a sala
-   * Retorna unsubscribe function
-   */
   static listenToRoom(
     roomId: string,
     callback: (roomData: FirestoreRoomData) => void,
@@ -260,27 +477,25 @@ export class FirestoreManager {
     try {
       const roomRef = doc(this.db, 'rooms', roomId);
 
-      const unsubscribe = onSnapshot(roomRef, (doc: any) => {
-        if (doc.exists()) {
-          const data = doc.data() as FirestoreRoomData;
-          callback(data);
+      return onSnapshot(
+        roomRef,
+        (documentSnapshot: any) => {
+          if (documentSnapshot.exists()) {
+            const data = documentSnapshot.data() as FirestoreRoomData;
+            callback(data);
+          }
+        },
+        (error: any) => {
+          console.error('❌ Erro ao escutar sala:', error);
+          onError?.(error);
         }
-      }, (error: any) => {
-        console.error('❌ Erro ao escutar sala:', error);
-        onError?.(error);
-      });
-
-      console.log('👂 Escutando mudanças na sala:', roomId);
-      return unsubscribe;
+      );
     } catch (error) {
       console.error('❌ Erro ao configurar listener de sala:', error);
       throw error;
     }
   }
 
-  /**
-   * Listener para turno atual
-   */
   static listenToTurn(
     roomId: string,
     turnId: string,
@@ -290,27 +505,25 @@ export class FirestoreManager {
     try {
       const turnRef = doc(this.db, 'rooms', roomId, 'turns', turnId);
 
-      const unsubscribe = onSnapshot(turnRef, (doc: any) => {
-        if (doc.exists()) {
-          const data = doc.data() as FirestoreTurnData;
-          callback(data);
+      return onSnapshot(
+        turnRef,
+        (documentSnapshot: any) => {
+          if (documentSnapshot.exists()) {
+            const data = documentSnapshot.data() as FirestoreTurnData;
+            callback(data);
+          }
+        },
+        (error: any) => {
+          console.error('❌ Erro ao escutar turno:', error);
+          onError?.(error);
         }
-      }, (error: any) => {
-        console.error('❌ Erro ao escutar turno:', error);
-        onError?.(error);
-      });
-
-      console.log('👂 Escutando mudanças no turno:', turnId);
-      return unsubscribe;
+      );
     } catch (error) {
       console.error('❌ Erro ao configurar listener de turno:', error);
       throw error;
     }
   }
 
-  /**
-   * Listener para players na sala
-   */
   static listenToPlayers(
     roomId: string,
     callback: (players: FirestorePlayerData[]) => void,
@@ -319,28 +532,28 @@ export class FirestoreManager {
     try {
       const playersRef = collection(this.db, 'rooms', roomId, 'players');
 
-      const unsubscribe = onSnapshot(playersRef, (snapshot: any) => {
-        const players: FirestorePlayerData[] = [];
-        snapshot.forEach((doc: any) => {
-          players.push(doc.data() as FirestorePlayerData);
-        });
-        callback(players);
-      }, (error: any) => {
-        console.error('❌ Erro ao escutar players:', error);
-        onError?.(error);
-      });
+      return onSnapshot(
+        playersRef,
+        (snapshot: any) => {
+          const players: FirestorePlayerData[] = [];
 
-      console.log('👂 Escutando players da sala:', roomId);
-      return unsubscribe;
+          snapshot.forEach((playerDoc: any) => {
+            players.push(playerDoc.data() as FirestorePlayerData);
+          });
+
+          callback(players);
+        },
+        (error: any) => {
+          console.error('❌ Erro ao escutar players:', error);
+          onError?.(error);
+        }
+      );
     } catch (error) {
       console.error('❌ Erro ao configurar listener de players:', error);
       throw error;
     }
   }
 
-  /**
-   * Obter dados de uma sala (uma vez)
-   */
   static async getRoom(roomId: string): Promise<FirestoreRoomData | null> {
     try {
       const roomRef = doc(this.db, 'rooms', roomId);
@@ -349,6 +562,7 @@ export class FirestoreManager {
       if (roomSnap.exists()) {
         return roomSnap.data() as FirestoreRoomData;
       }
+
       return null;
     } catch (error) {
       console.error('❌ Erro ao obter sala:', error);
@@ -356,17 +570,15 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Obter todos os jogadores de uma sala
-   */
   static async getPlayers(roomId: string): Promise<FirestorePlayerData[]> {
     try {
       const playersRef = collection(this.db, 'rooms', roomId, 'players');
       const playersSnap = await getDocs(playersRef);
 
       const players: FirestorePlayerData[] = [];
-      playersSnap.forEach((doc: any) => {
-        players.push(doc.data() as FirestorePlayerData);
+
+      playersSnap.forEach((playerDoc: any) => {
+        players.push(playerDoc.data() as FirestorePlayerData);
       });
 
       return players;
@@ -376,9 +588,6 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Sair de uma sala
-   */
   static async leaveRoom(roomId: string, userId: string): Promise<void> {
     try {
       const batch = writeBatch(this.db);
@@ -386,17 +595,14 @@ export class FirestoreManager {
       const roomRef = doc(this.db, 'rooms', roomId);
       const playerRef = doc(this.db, 'rooms', roomId, 'players', userId);
 
-      // Remover player da lista
-      const roomData = await this.getRoom(roomId);
-      if (roomData) {
-        const updatedPlayers = roomData.players.filter((id) => id !== userId);
-        batch.update(roomRef, { players: updatedPlayers });
-      }
+      batch.update(roomRef, {
+        players: arrayRemove(userId),
+      });
 
-      // Deletar documento do player
       batch.delete(playerRef);
 
       await batch.commit();
+
       console.log('✅ Player saiu da sala');
     } catch (error) {
       console.error('❌ Erro ao sair da sala:', error);
@@ -404,9 +610,6 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Validar se convite é válido
-   */
   static async validateRoomInvite(roomId: string): Promise<boolean> {
     try {
       const room = await this.getRoom(roomId);
@@ -416,14 +619,14 @@ export class FirestoreManager {
         return false;
       }
 
-      // Verificar se ainda está procurando jogadores
       if (room.status !== 'looking_for_players') {
         console.warn('⚠️ Sala já iniciou ou terminou');
         return false;
       }
 
-      // Verificar se ainda tem slots disponíveis
-      if (room.players.length >= room.maxPlayers) {
+      const players = Array.isArray(room.players) ? room.players : [];
+
+      if (players.length >= room.maxPlayers) {
         console.warn('⚠️ Sala cheia');
         return false;
       }
@@ -435,9 +638,6 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Atualizar score do player
-   */
   static async updatePlayerScore(
     roomId: string,
     userId: string,
@@ -446,6 +646,7 @@ export class FirestoreManager {
     try {
       const playerRef = doc(this.db, 'rooms', roomId, 'players', userId);
       await updateDoc(playerRef, { score });
+
       console.log('✅ Score atualizado:', score);
     } catch (error) {
       console.error('❌ Erro ao atualizar score:', error);
@@ -453,16 +654,11 @@ export class FirestoreManager {
     }
   }
 
-  /**
-   * Marcar player como pronto
-   */
-  static async markPlayerReady(
-    roomId: string,
-    userId: string
-  ): Promise<void> {
+  static async markPlayerReady(roomId: string, userId: string): Promise<void> {
     try {
       const playerRef = doc(this.db, 'rooms', roomId, 'players', userId);
       await updateDoc(playerRef, { isReady: true });
+
       console.log('✅ Player marcado como pronto');
     } catch (error) {
       console.error('❌ Erro ao marcar como pronto:', error);

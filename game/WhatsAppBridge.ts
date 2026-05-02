@@ -3,19 +3,15 @@
  * Estrutura para criar convites dinâmicos via WhatsApp
  */
 
+import * as Clipboard from 'expo-clipboard';
 import * as Linking from 'expo-linking';
+import { Share } from 'react-native';
 import { WhatsAppInvite } from './types';
 
 export class WhatsAppBridge {
   private static readonly WHATSAPP_API_BASE = 'https://api.whatsapp.com/send';
   private static readonly DEEP_LINK_SCHEME = 'festhausgame://room';
 
-  /**
-   * Gera um link de convite para WhatsApp com Deep Link
-   * @param roomId - ID da sala de jogo
-   * @param hostName - Nome do host
-   * @param phoneNumbers - Array de números para enviar
-   */
   static generateWhatsAppInvite(
     roomId: string,
     hostName: string,
@@ -25,13 +21,12 @@ export class WhatsAppBridge {
     const message = this.generateInviteMessage(hostName, roomId);
 
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24); // Válido por 24 horas
+    expiresAt.setHours(expiresAt.getHours() + 24);
 
-    // Codificar mensagem para URL
     const encodedMessage = encodeURIComponent(message);
 
-    // Se houver números, criar link direto para o WhatsApp
-    let inviteLink = '';
+    let inviteLink = `${this.WHATSAPP_API_BASE}?text=${encodedMessage}`;
+
     if (phoneNumbers.length > 0) {
       const phone = phoneNumbers[0].replace(/\D/g, '');
       inviteLink = `${this.WHATSAPP_API_BASE}?phone=${phone}&text=${encodedMessage}`;
@@ -46,33 +41,22 @@ export class WhatsAppBridge {
     };
   }
 
-  /**
-   * Gera um Deep Link para abrir a sala diretamente no app
-   */
   static generateDeepLink(roomId: string): string {
     return `${this.DEEP_LINK_SCHEME}/${roomId}`;
   }
 
-  /**
-   * Gera a mensagem de convite para WhatsApp
-   */
   private static generateInviteMessage(hostName: string, roomId: string): string {
     const deepLink = this.generateDeepLink(roomId);
+
     return (
-      `Hey! 🎮 Que tal jogar uma partida comigo de Fest Haus Game? ` +
-      `\n\n` +
-      `${hostName} criou uma sala de jogo!\n` +
-      `Sala: ${roomId}\n` +
-      `\n` +
-      `Toque aqui para entrar: ${deepLink}\n` +
-      `\n` +
-      `Ou baixe em: play.google.com/store/apps/details?id=com.festhausgame`
+      `🎮 Bora jogar Fest Haus Game?\n\n` +
+      `${hostName} criou uma sala de jogo!\n\n` +
+      `Código da sala: ${roomId}\n` +
+      `Link para entrar: ${deepLink}\n\n` +
+      `Se o link não abrir, copie o código da sala e entre manualmente pelo app.`
     );
   }
 
-  /**
-   * Abre o WhatsApp com a mensagem de convite pré-preenchida
-   */
   static async sendViaWhatsApp(
     hostName: string,
     roomId: string,
@@ -88,25 +72,13 @@ export class WhatsAppBridge {
     }
   }
 
-  /**
-   * Compartilha o link via sistema de compartilhamento nativo
-   */
-  static async shareInvite(
-    hostName: string,
-    roomId: string
-  ): Promise<void> {
+  static async shareInvite(hostName: string, roomId: string): Promise<void> {
     const message = this.generateInviteMessage(hostName, roomId);
-    const deepLink = this.generateDeepLink(roomId);
 
     try {
-      // Usar o Sharing do Expo (funciona em iOS e Android)
-      // Você precisaria importar Share do react-native
-      const { Share } = require('react-native');
-
       await Share.share({
-        message: message,
-        url: deepLink, // iOS
-        title: `Convite - Jogo com ${hostName}`,
+        message,
+        title: `Convite - Fest Haus Game`,
       });
     } catch (error) {
       console.error('Erro ao compartilhar:', error);
@@ -114,13 +86,7 @@ export class WhatsAppBridge {
     }
   }
 
-  /**
-   * Configura o handler para Deep Links na app
-   * Deve ser chamado no layout raiz
-   */
-  static setupDeepLinkHandler(
-    onRoomJoin: (roomId: string) => void
-  ): (() => void) {
+  static setupDeepLinkHandler(onRoomJoin: (roomId: string) => void): () => void {
     const handleUrl = ({ url }: { url: string }) => {
       try {
         const route = url.replace(/.*:\/\/?/, '');
@@ -135,45 +101,34 @@ export class WhatsAppBridge {
     };
 
     try {
-      // Listener para quando o app é aberto via deep link
       const subscription = Linking.addEventListener('url', handleUrl);
 
-      // Também verificar URL inicial quando o app é aberto (com delay para garantir que o contexto está pronto)
       setTimeout(() => {
-        try {
-          Linking.getInitialURL().then((url: string | null) => {
-            if (url != null) {
+        Linking.getInitialURL()
+          .then((url: string | null) => {
+            if (url) {
               handleUrl({ url });
             }
-          }).catch((error) => {
+          })
+          .catch((error) => {
             console.warn('Erro ao obter URL inicial:', error);
           });
-        } catch (error) {
-          console.warn('Erro ao processar URL inicial:', error);
-        }
       }, 100);
 
       return () => subscription.remove();
     } catch (error) {
       console.warn('Erro ao configurar deep link handler:', error);
-      return () => {}; // Retorna função vazia se falhar
+      return () => { };
     }
   }
 
-  /**
-   * Valida um convite (verifica se não expirou)
-   */
   static isInviteValid(invite: WhatsAppInvite): boolean {
     return new Date() < invite.expiresAt;
   }
 
-  /**
-   * Copia o link para a área de transferência
-   */
   static async copyLinkToClipboard(deepLink: string): Promise<void> {
     try {
-      const { Clipboard } = require('expo-clipboard');
-      await Clipboard.setString(deepLink);
+      await Clipboard.setStringAsync(deepLink);
     } catch (error) {
       console.error('Erro ao copiar para clipboard:', error);
       throw error;
@@ -181,9 +136,6 @@ export class WhatsAppBridge {
   }
 }
 
-/**
- * Gerenciador de Convites (Persistência)
- */
 export class InviteManager {
   private static invites: Map<string, WhatsAppInvite> = new Map();
 
@@ -197,6 +149,7 @@ export class InviteManager {
       hostName,
       phoneNumbers
     );
+
     this.invites.set(roomId, invite);
     return invite;
   }
