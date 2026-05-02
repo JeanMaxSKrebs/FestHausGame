@@ -1,0 +1,41 @@
+{
+  "project_info": {
+    "project_number": "833177196919",
+    "project_id": "max-rpg-d4423",
+    "storage_bucket": "max-rpg-d4423.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:833177196919:android:bc1cf195e5778a0f3fa972",
+        "android_client_info": {
+          "package_name": "com.festhausgame"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA-vKD8woMgvkVF1VPAjKcdAf-qgZAWYBU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "833177196919-si3u02ni4ek02m50npnb58ar4d8777ss.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "833177196919-3kgvdd6oani71fkplptbpi17tl4atap7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.festhausgame"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

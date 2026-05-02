@@ -1,151 +1,50 @@
-# Fest Haus Game
+# Welcome to your Expo app 👋
 
-Um novo projeto React Native baseado no Projeto_termax com autenticação Firebase e telas de login/cadastro.
+This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
-## 📋 Requisitos
+## Get started
 
-- Node.js >= 16
-- React Native CLI
-- Firebase project (para autenticação)
-- Android SDK (para Android)
-- Xcode (para iOS)
+1. Install dependencies
 
-## 🚀 Primeiros Passos
+   ```bash
+   npm install
+   ```
 
-### 1. Instalar Dependências
+2. Start the app
+
+   ```bash
+   npx expo start
+   ```
+
+In the output, you'll find options to open the app in a
+
+- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
+- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
+- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
+- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+
+You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+
+## Get a fresh project
+
+When you're ready, run:
 
 ```bash
-npm install
+npm run reset-project
 ```
 
-ou
+This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
-```bash
-yarn install
-```
+## Learn more
 
-### 2. Configurar Firebase
+To learn more about developing your project with Expo, look at the following resources:
 
-1. Crie um projeto no [Firebase Console](https://console.firebase.google.com)
-2. Configure a autenticação por Email/Senha
-3. Baixe o arquivo `google-services.json` para Android
-4. Baixe o arquivo `GoogleService-Info.plist` para iOS
+- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
+- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
 
-#### Android:
-Coloque `google-services.json` em `android/app/`
+## Join the community
 
-#### iOS:
-Coloque `GoogleService-Info.plist` no projeto Xcode
+Join our community of developers creating universal apps.
 
-### 3. Configurar Autenticação Google
-
-#### Android:
-1. Gere o SHA-1 da sua chave:
-```bash
-cd android
-./gradlew signingReport
-```
-
-2. Adicione o SHA-1 ao Firebase Console
-
-3. Configure OAuth 2.0 no [Google Cloud Console](https://console.cloud.google.com)
-
-#### iOS:
-1. Configure URL Schemes no Xcode:
-   - Bundle ID debe estar configurado no Firebase
-   - Adicione o arquivo `GoogleService-Info.plist`
-
-### 4. Executar o Projeto
-
-#### Android:
-```bash
-npm run android
-```
-
-#### iOS:
-```bash
-npm run ios
-```
-
-#### Desenvolvimento:
-```bash
-npm start
-```
-
-## 📁 Estrutura do Projeto
-
-```
-src/
-├── screens/
-│   ├── SignIn/       # Tela de login
-│   ├── SignUp/       # Tela de cadastro
-│   └── Home/         # Tela inicial
-├── context/
-│   └── AuthUserProvider.js  # Contexto de autenticação
-├── navigation/
-│   └── Navigator.js  # Navegação do app
-└── components/
-```
-
-## 🔐 Autenticação
-
-O projeto utiliza Firebase Authentication com:
-- Email/Senha
-- Suporte para Google Sign-In (a ser implementado)
-
-### AuthUserContext
-
-O contexto fornece os seguintes métodos:
-
-```javascript
-{
-  user,           // Usuário atual
-  loading,        // Status de carregamento
-  signIn,         // Login com email/senha
-  signUp,         // Criar nova conta
-  signOut,        // Fazer logout
-  getUserData,    // Obter dados do usuário
-  storeUserSession // Armazenar sessão criptografada
-}
-```
-
-## 🔄 Fluxo de Autenticação
-
-1. **Inicialização**: O app tenta recuperar a sessão criptografada
-2. **Login**: Usuário faz login com email e senha
-3. **Sessão**: Credenciais são armazenadas criptografadas
-4. **Logout**: A sessão é limpa e o usuário volta para SignIn
-
-## 📦 Dependências Principais
-
-- `@react-native-firebase/*`: Autenticação e Firestore
-- `@react-navigation/*`: Navegação
-- `react-native-encrypted-storage`: Armazenamento seguro
-- `styled-components`: Estilo de componentes
-
-## 🛠️ Scripts Disponíveis
-
-- `npm start`: Inicia o metro bundler
-- `npm run android`: Executa no Android
-- `npm run ios`: Executa no iOS
-- `npm test`: Rodas testes
-- `npm run lint`: Verifica lint
-
-## 📝 Próximos Passos
-
-- [ ] Implementar Google Sign-In
-- [ ] Adicionar componentes customizados
-- [ ] Implementar telas de jogo
-- [ ] Adicionar sistema de pontos/moedas
-- [ ] Integrar Firestore para dados
-
-## 📞 Suporte
-
-Para dúvidas ou problemas, consulte a documentação oficial:
-- [React Native](https://reactnative.dev/)
-- [Firebase](https://firebase.google.com/docs)
-- [React Navigation](https://reactnavigation.org/)
-
----
-
-Desenvolvido basead no Projeto_termax
+- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
+- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.

@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // =============================================
+    // ROOMS Collection
+    // =============================================
+    match /rooms/{roomId} {
+      // Any authenticated user can read rooms they're in
+      allow read: if request.auth.uid != null && 
+                     (request.auth.uid in resource.data.players || 
+                      request.auth.uid == resource.data.createdBy);
+      
+      // Only creator can create rooms
+      allow create: if request.auth.uid != null && 
+                       request.auth.uid == request.resource.data.createdBy;
+      
+      // Only players can update their own room data
+      allow update: if request.auth.uid != null &&
+                       request.auth.uid in resource.data.players;
+      
+      // Only creator can delete
+      allow delete: if request.auth.uid != null && 
+                       request.auth.uid == resource.data.createdBy;
+
+      // =============================================
+      // Players Subcollection
+      // =============================================
+      match /players/{userId} {
+        // Players can read their own data and data of other players in the room
+        allow read: if request.auth.uid != null && 
+                       request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.players;
+        
+        // Players can create/update their own data
+        allow create: if request.auth.uid != null && 
+                         request.auth.uid == userId;
+        
+        allow update: if request.auth.uid != null && 
+                         request.auth.uid == userId;
+        
+        // Only creator of room can delete
+        allow delete: if request.auth.uid != null && 
+                         request.auth.uid == get(/databases/$(database)/documents/rooms/$(roomId)).data.createdBy;
+      }
+
+      // =============================================
+      // Turns Subcollection
+      // =============================================
+      match /turns/{turnId} {
+        // Players in room can read turns
+        allow read: if request.auth.uid != null && 
+                       request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.players;
+        
+        // Server validation: must be current player's turn
+        allow create, update: if request.auth.uid != null && 
+                                request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.players;
+        
+        // Only in game creation
+        allow delete: if false;
+      }
+    }
+
+    // =============================================
+    // USERS Collection
+    // =============================================
+    match /users/{userId} {
+      // Users can only read/write their own data
+      allow read, write: if request.auth.uid != null && 
+                            request.auth.uid == userId;
+    }
+
+    // =============================================
+    // STATISTICS Collection (optional)
+    // =============================================
+    match /statistics/{userId} {
+      // Users can read any statistics
+      allow read: if request.auth.uid != null;
+      
+      // Users can only update their own stats
+      allow write: if request.auth.uid != null && 
+                      request.auth.uid == userId;
+    }
+
+    // =============================================
+    // Default deny all
+    // =============================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

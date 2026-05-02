@@ -1,99 +1,109 @@
-# Fest Haus Game - Guia de Configuração Google Sign-In
+# 🔐 Configurar Google Sign-In com Expo
 
-## 📋 Configuração do Google Sign-In
+## Passos para Habilitar Google Sign-In
 
-### Passo 1: Instalar Dependências
+### 1️⃣ Obter Google OAuth Client ID
 
-```bash
-npm install @react-native-google-signin/google-signin react-native-vector-icons
-```
+1. Acesse [Google Cloud Console](https://console.cloud.google.com/)
+2. Selecione seu projeto Firebase (max-rpg-d4423)
+3. Vá para **APIs & Services** → **Credentials**
+4. Clique em **Create Credentials** → **OAuth Client ID**
+5. Escolha **Web application** (NÃO Android)
+6. Nome: `FestHausGame Web`
 
-### Passo 2: Configurar Android
+#### Configurar Redirect URIs
+7. Em **Authorized redirect URIs**, adicione:
+   - `https://auth.expo.io/@seu_usuario/FestHausGame`
+   - `com.festhausgame://` (custom scheme)
+   - `exp://localhost:19000/*` (local development)
 
-#### 2.1 Adicionar Dependências (android/build.gradle)
+8. Clique em **CREATE**
+9. Copie o **Client ID** (não o secret!)
 
-```gradle
-allprojects {
-    repositories {
-        // ...
-        maven {
-            url 'https://maven.google.com'
-        }
-    }
-}
-```
-
-#### 2.2 Configurar android/app/build.gradle
-
-```gradle
-dependencies {
-    // ...
-    implementation 'com.google.android.gms:play-services-auth:20.5.0'
-    implementation 'com.google.firebase:firebase-auth'
-}
-```
-
-### Passo 3: Configurar iOS
-
-#### 3.1 Executar Pod Install
+### 2️⃣ Criar arquivo `.env` local
 
 ```bash
-cd ios
-pod install
+# Copiar do .env.example
+cp .env.example .env
+
+# Editar .env e adicionar seu Client ID
+EXPO_PUBLIC_GOOGLE_CLIENT_ID=seu_client_id_aqui
 ```
 
-#### 3.2 URL Schemes no Xcode
+### 3️⃣ Testar Local
 
-1. Abra o projeto Xcode: `open ios/FestHausGame.xcworkspace`
-2. Vá para: Target > Info > URL Types
-3. Adicione URL Scheme: `com.googleusercontent.apps.YOUR_CLIENT_ID`
+```bash
+npm run android -- --port 8082
+```
 
-### Passo 4: Utilizar Google Sign-In no App
+Clique em "ENTRAR COM GOOGLE" e você verá:
+- ✅ Navegador abre com login do Google
+- ✅ Após login, código de autenticação é recebido
+- ✅ Mensagem mostrando próximos passos
+
+### 4️⃣ (Opcional) Completar Backend para Produção
+
+Para funcionar completamente em produção, precisamos de um backend que:
+
+1. Receba o código de autenticação do cliente
+2. Troque o código por um Token ID do Google (usando client secret)
+3. Retorne o token ao cliente
+4. Cliente usa o token para autenticar no Firebase
+
+**Exemplo com Node.js:**
 
 ```javascript
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
-import auth from '@react-native-firebase/auth';
+// backend/routes/google-auth.js
+const axios = require('axios');
 
-// Configure o Google Sign-In
-GoogleSignin.configure({
-  webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
-  offlineAccess: true,
-  forceCodeForRefreshToken: true,
-});
-
-// Função para fazer login com Google
-const signInWithGoogle = async () => {
+app.post('/api/auth/google', async (req, res) => {
+  const { code, redirectUri } = req.body;
+  
   try {
-    await GoogleSignin.hasPlayServices();
-    const userInfo = await GoogleSignin.signIn();
+    // Trocar código por token
+    const response = await axios.post('https://oauth2.googleapis.com/token', {
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET, // ⚠️ NUNCA compartilhar!
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code'
+    });
     
-    const credential = auth.GoogleAuthProvider.credential(userInfo.idToken);
-    await auth().signInWithCredential(credential);
+    // Token ID está em response.data.id_token
+    res.json({ idToken: response.data.id_token });
   } catch (error) {
-    if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-      console.log('Usuário cancelou o login');
-    } else if (error.code === statusCodes.IN_PROGRESS) {
-      console.log('Login em progresso');
-    } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-      console.log('Play Services não disponível');
-    } else {
-      console.error(error);
-    }
+    res.status(400).json({ error: error.message });
   }
-};
+});
 ```
 
-### Passo 5: Firebase Console
+Então no cliente:
 
-1. Ative Google Sign-In em: Firebase Console > Authentication > Sign-in method
-2. Adicione o SHA-1 do seu projeto Android
-3. Configure OAuth 2.0 no Google Cloud Console
+```javascript
+// Após obter código:
+const response = await fetch('https://seu-backend.com/api/auth/google', {
+  method: 'POST',
+  body: JSON.stringify({ code, redirectUri })
+});
 
-## 🔗 Referências
+const { idToken } = await response.json();
 
-- [React Native Google Sign-In](https://github.com/react-native-google-signin/google-signin)
-- [Firebase Google Authentication](https://firebase.google.com/docs/auth/android/google-signin)
+// Usar no Firebase
+const credential = GoogleAuthProvider.credential(idToken);
+await signInWithCredential(auth, credential);
+```
 
----
+## Status Atual
 
-**Nota**: Você precisa substituir `YOUR_CLIENT_ID` e `YOUR_WEB_CLIENT_ID` pelos valores reais do seu projeto Firebase.
+- ✅ Google Sign-In via Expo funciona localmente
+- ⏳ Backend necessário para produção
+- ✅ Email/Senha função 100%
+
+## Solução Alternativa Simples
+
+Se não quiser fazer backend, use **Firebase**:
+- Google já configurado no Firebase Console
+- Use `signInWithPopup` em Web
+- Use `@react-native-google-signin/google-signin` com EAS Build Android
+
+Qual você prefere?
