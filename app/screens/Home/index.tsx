@@ -1,15 +1,16 @@
+import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useContext } from 'react';
 import {
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Icon from 'react-native-vector-icons/FontAwesome';
 import { AuthUserContext } from '../../../context/AuthUserProvider';
 
 const Home = () => {
@@ -31,21 +32,11 @@ const Home = () => {
     });
   };
 
-  const handleCreateGameDirectInvite = () => {
-    router.push({
-      pathname: '/screens/Game',
-      params: {
-        createNew: 'true',
-        roomType: 'direct_invite',
-        maxPlayers: '6',
-        phone: user?.phone || '',
-      },
-    });
-  };
-
   const handleJoinGame = () => {
-    // Navegar para tela de entrada de código/convite
-    alert('Funcionalidade em desenvolvimento - Escaneie o código QR ou cole o link de convite');
+    Alert.alert(
+      'Entrar em Sala',
+      'Funcionalidade em desenvolvimento. Em breve você poderá colar um código ou abrir um convite.'
+    );
   };
 
   return (
@@ -57,13 +48,15 @@ const Home = () => {
             style={styles.logo}
             resizeMode="contain"
           />
+
           <Text style={styles.title}>Fest Haus Game</Text>
-          <Text style={styles.title}>Bem-vindo!</Text>
+          <Text style={styles.subtitle}>Bem-vindo!</Text>
         </View>
 
         {user && (
           <View style={styles.userCard}>
-            <Icon name="user-circle" size={40} color="#007AFF" />
+            <FontAwesome name="user-circle" size={40} color="#007AFF" />
+
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{user.nome || user.email}</Text>
               <Text style={styles.userEmail}>{user.email}</Text>
@@ -77,66 +70,48 @@ const Home = () => {
           <TouchableOpacity
             style={styles.gameOption}
             onPress={handleCreateGameWaitingRoom}
+            activeOpacity={0.8}
           >
             <View style={styles.gameOptionIcon}>
-              <Icon name="users" size={28} color="#fff" />
+              <FontAwesome name="users" size={28} color="#fff" />
             </View>
+
             <View style={styles.gameOptionContent}>
               <Text style={styles.gameOptionTitle}>Criar Sala de Espera</Text>
-              <Text style={styles.gameOptionDesc}>Convide amigos e comece quando todos estiverem prontos</Text>
+              <Text style={styles.gameOptionDesc}>
+                Crie uma sala e convide seus amigos depois.
+              </Text>
             </View>
-            <Icon name="chevron-right" size={20} color="#007AFF" />
-          </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.gameOption}
-            onPress={handleCreateGameDirectInvite}
-          >
-            <View style={[styles.gameOptionIcon, styles.whatsappIcon]}>
-              <Icon name="whatsapp" size={28} color="#fff" />
-            </View>
-            <View style={styles.gameOptionContent}>
-              <Text style={styles.gameOptionTitle}>Convite WhatsApp</Text>
-              <Text style={styles.gameOptionDesc}>Crie um link de convite direto para WhatsApp</Text>
-            </View>
-            <Icon name="chevron-right" size={20} color="#25D366" />
+            <FontAwesome name="chevron-right" size={20} color="#007AFF" />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.gameOption}
             onPress={handleJoinGame}
+            activeOpacity={0.8}
           >
             <View style={[styles.gameOptionIcon, styles.joinIcon]}>
-              <Icon name="sign-in" size={28} color="#fff" />
+              <FontAwesome name="sign-in" size={28} color="#fff" />
             </View>
+
             <View style={styles.gameOptionContent}>
               <Text style={styles.gameOptionTitle}>Entrar em Sala</Text>
-              <Text style={styles.gameOptionDesc}>Cole um código ou escaneie QR de um amigo</Text>
+              <Text style={styles.gameOptionDesc}>
+                Entre usando um código ou convite de um amigo.
+              </Text>
             </View>
-            <Icon name="chevron-right" size={20} color="#FF9500" />
-          </TouchableOpacity>
-        </View>
 
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>0</Text>
-            <Text style={styles.statLabel}>Partidas</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>0</Text>
-            <Text style={styles.statLabel}>Vitórias</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>0</Text>
-            <Text style={styles.statLabel}>Pontos</Text>
-          </View>
+            <FontAwesome name="chevron-right" size={20} color="#FF9500" />
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity
           style={styles.logoutButton}
           onPress={handleLogout}
+          activeOpacity={0.8}
         >
-          <Icon name="sign-out" size={18} color="#fff" />
+          <FontAwesome name="sign-out" size={18} color="#fff" />
           <Text style={styles.logoutButtonText}>SAIR</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -166,6 +141,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: '#333',
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#666',
+    marginTop: 4,
     textAlign: 'center',
   },
   userCard: {
@@ -202,6 +183,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   gameOptionsContainer: {
+    flex: 1,
     marginBottom: 25,
   },
   gameOption: {
@@ -225,9 +207,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  whatsappIcon: {
-    backgroundColor: '#25D366',
-  },
   joinIcon: {
     backgroundColor: '#FF9500',
   },
@@ -244,32 +223,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     marginTop: 4,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 5,
   },
   logoutButton: {
     backgroundColor: '#FF3B30',
