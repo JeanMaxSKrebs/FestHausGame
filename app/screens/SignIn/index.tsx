@@ -1,31 +1,56 @@
-import { useRouter } from 'expo-router';
-import { useContext, useState } from 'react';
+import { FontAwesome } from '@expo/vector-icons';
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  GoogleSignin,
+  statusCodes,
+  type SignInSuccessResponse,
+} from '@react-native-google-signin/google-signin';
+import { useRouter } from 'expo-router';
+import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { useContext, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Icon from 'react-native-vector-icons/FontAwesome';
 import { AuthUserContext } from '../../../context/AuthUserProvider';
-import { useGoogleSignIn } from '../../../hooks/useGoogleSignIn';
+import { auth } from '../../../services/firebase/config';
 
 const SignIn = () => {
   const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
   const { signIn } = useContext(AuthUserContext);
-  const { request: googleRequest, loading: googleLoading, promptAsync: googlePromptAsync } = useGoogleSignIn();
 
+  useEffect(() => {
+    const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+    const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
 
+    if (!webClientId) {
+      console.warn('⚠️ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID não está configurado no .env');
+      return;
+    }
+
+    GoogleSignin.configure({
+      webClientId,
+      iosClientId,
+      scopes: ['profile', 'email'],
+      offlineAccess: false,
+    });
+
+    console.log('✅ [SignIn] GoogleSignin configurado');
+  }, []);
 
   const validateInputs = () => {
     if (!email || !senha) {
@@ -34,6 +59,7 @@ const SignIn = () => {
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
     if (!emailRegex.test(email)) {
       Alert.alert('Erro', 'Email inválido.');
       return false;
@@ -52,8 +78,8 @@ const SignIn = () => {
 
     try {
       setLoading(true);
-      await signIn(email, senha);
-      // Telefone será armazenado no perfil do usuário
+      await signIn(email.trim(), senha);
+      router.replace('/screens/Home');
     } catch (error: any) {
       switch (error.code) {
         case 'auth/user-not-found':
@@ -66,7 +92,7 @@ const SignIn = () => {
           Alert.alert('Erro', 'Email inválido.');
           break;
         default:
-          Alert.alert('Erro', 'Erro ao fazer login.');
+          Alert.alert('Erro', error.message || 'Erro ao fazer login.');
       }
     } finally {
       setLoading(false);
@@ -75,19 +101,67 @@ const SignIn = () => {
 
   const handleGoogleSignIn = async () => {
     try {
-      if (googleRequest) {
-        await googlePromptAsync();
-      } else {
-        Alert.alert('Erro', 'Google Sign-In não está pronto. Tente novamente.');
+      setGoogleLoading(true);
+
+      console.log('🔐 [SignIn] Abrindo Google Sign-In nativo...');
+
+      await GoogleSignin.hasPlayServices({
+        showPlayServicesUpdateDialog: true,
+      });
+
+      await GoogleSignin.signOut().catch(() => { });
+
+      const response = (await GoogleSignin.signIn()) as SignInSuccessResponse;
+      const userInfo = response.data?.user;
+
+      console.log('✅ [SignIn] Google Sign-In OK:', userInfo?.email);
+
+      let idToken = response.data?.idToken;
+
+      if (!idToken) {
+        const tokens = await GoogleSignin.getTokens();
+        idToken = tokens.idToken;
       }
-    } catch (error) {
-      console.error('Erro:', error);
+
+      if (!idToken) {
+        throw new Error('Google não retornou ID Token.');
+      }
+
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, credential);
+
+      console.log('✅ [SignIn] Firebase OK:', userCredential.user.email);
+
+      router.replace('/screens/Home');
+    } catch (error: any) {
+      console.error('❌ [SignIn] Erro Google:', error);
+
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        console.log('ℹ️ Usuário cancelou o login Google.');
+        return;
+      }
+
+      if (error.code === statusCodes.IN_PROGRESS) {
+        Alert.alert('Aguarde', 'O login com Google já está em andamento.');
+        return;
+      }
+
+      if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Erro', 'Google Play Services não está disponível ou está desatualizado.');
+        return;
+      }
+
+      Alert.alert('Erro', error.message || 'Erro ao fazer login com Google.');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
   const handleSignUp = () => {
     router.push('/screens/SignUp');
   };
+
+  const isBusy = loading || googleLoading;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -98,6 +172,7 @@ const SignIn = () => {
             style={styles.logo}
             resizeMode="contain"
           />
+
           <Text style={styles.title}>Fest Haus Game</Text>
           <Text style={styles.subtitle}>Bem-vindo de volta</Text>
 
@@ -105,10 +180,11 @@ const SignIn = () => {
             style={styles.input}
             placeholder="Email"
             keyboardType="email-address"
-            editable={!loading}
+            editable={!isBusy}
             value={email}
             onChangeText={setEmail}
             placeholderTextColor="#999"
+            autoCapitalize="none"
           />
 
           <View style={styles.passwordContainer}>
@@ -116,16 +192,17 @@ const SignIn = () => {
               style={styles.passwordInput}
               placeholder="Senha"
               secureTextEntry={!showPassword}
-              editable={!loading}
+              editable={!isBusy}
               value={senha}
               onChangeText={setSenha}
               placeholderTextColor="#999"
             />
+
             <TouchableOpacity
               onPress={() => setShowPassword(!showPassword)}
-              disabled={loading}
+              disabled={isBusy}
             >
-              <Icon
+              <FontAwesome
                 name={showPassword ? 'eye' : 'eye-slash'}
                 size={20}
                 color="#666"
@@ -135,9 +212,9 @@ const SignIn = () => {
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
+              style={[styles.button, isBusy && styles.buttonDisabled]}
               onPress={handleSignIn}
-              disabled={loading}
+              disabled={isBusy}
             >
               {loading ? (
                 <ActivityIndicator size="small" color="#fff" />
@@ -154,17 +231,24 @@ const SignIn = () => {
           </View>
 
           <TouchableOpacity
-            style={[styles.googleButton, (loading || googleLoading || !googleRequest) && styles.buttonDisabled]}
+            style={[styles.googleButton, isBusy && styles.buttonDisabled]}
             onPress={handleGoogleSignIn}
-            disabled={loading || googleLoading || !googleRequest}
+            disabled={isBusy}
           >
-            <Icon name="google" size={20} color="#fff" style={styles.googleIcon} />
-            <Text style={styles.googleButtonText}>ENTRAR COM GOOGLE</Text>
+            {googleLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <FontAwesome name="google" size={20} color="#fff" style={styles.googleIcon} />
+                <Text style={styles.googleButtonText}>ENTRAR COM GOOGLE</Text>
+              </>
+            )}
           </TouchableOpacity>
 
           <View style={styles.signUpContainer}>
             <Text style={styles.signUpText}>Não tem uma conta? </Text>
-            <TouchableOpacity onPress={handleSignUp} disabled={loading}>
+
+            <TouchableOpacity onPress={handleSignUp} disabled={isBusy}>
               <Text style={styles.signUpLink}>Cadastre-se aqui</Text>
             </TouchableOpacity>
           </View>

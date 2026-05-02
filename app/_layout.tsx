@@ -2,10 +2,11 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useContext, useEffect } from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { Platform } from 'react-native';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { AppLoadingScreen } from '../components/AppLoadingScreen';
 import { AuthUserContext, AuthUserProvider } from '../context/AuthUserProvider';
 import { WhatsAppBridge } from '../game/WhatsAppBridge';
 
@@ -13,11 +14,14 @@ import { WhatsAppBridge } from '../game/WhatsAppBridge';
 if (Platform.OS === 'web') {
   if (typeof window !== 'undefined') {
     const originalError = console.error;
+
     console.error = (...args: any[]) => {
       const message = args[0]?.toString() || '';
+
       if (message.includes('MetaMask') || message.includes('Failed to connect')) {
         return;
       }
+
       originalError?.(...args);
     };
   }
@@ -35,12 +39,9 @@ function RootLayoutNav() {
   // Setup Deep Link Handler
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
-    
+
     try {
-      unsubscribe = WhatsAppBridge.setupDeepLinkHandler?.((
-        roomId: string
-      ) => {
-        // Navigar para a tela de jogo com o roomId
+      unsubscribe = WhatsAppBridge.setupDeepLinkHandler?.((roomId: string) => {
         try {
           router.push({
             pathname: '/screens/Game',
@@ -56,8 +57,8 @@ function RootLayoutNav() {
 
     return () => {
       try {
-        if (typeof unsubscribe === 'function' && unsubscribe) {
-          (unsubscribe as () => void)();
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
         }
       } catch (error) {
         console.warn('Erro ao remover deep link listener:', error);
@@ -67,49 +68,39 @@ function RootLayoutNav() {
 
   // Redirect based on auth state
   useEffect(() => {
-    if (!loading) {
-      setTimeout(() => {
-        if (user) {
-          router.replace('/screens/Home');
-        } else {
-          router.replace('/screens/SignIn');
-        }
-      }, 100);
-    }
+    if (loading) return;
+
+    const timeout = setTimeout(() => {
+      if (user) {
+        router.replace('/screens/Home');
+      } else {
+        router.replace('/screens/SignIn');
+      }
+    }, 100);
+
+    return () => clearTimeout(timeout);
   }, [user, loading, router]);
 
   if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#0000ff" />
-      </View>
-    );
+    return <AppLoadingScreen />;
   }
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={{}}>
-        <Stack.Screen 
-          name="index" 
-          options={{ 
-            headerShown: false
-          }} 
-        />
-        
-        <Stack.Screen 
-          name="screens" 
-          options={{ 
-            headerShown: false
-          }} 
-        />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
 
-        <Stack.Screen 
-          name="modal" 
-          options={{ 
+        <Stack.Screen name="screens" />
+
+        <Stack.Screen
+          name="modal"
+          options={{
             presentation: 'modal',
-          }} 
+            headerShown: true,
+          }}
         />
       </Stack>
+
       <StatusBar style="auto" />
     </ThemeProvider>
   );
@@ -122,4 +113,3 @@ export default function RootLayout() {
     </AuthUserProvider>
   );
 }
-
