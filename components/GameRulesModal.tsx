@@ -103,17 +103,30 @@ const BONUS_RULES = [
     'A carta 10 pode ser negociada com outro jogador.',
 ];
 
+const JOKER_RULE = {
+    value: 0,
+    label: 'Coringa',
+    title: 'Coringa',
+    description:
+        'No modo bônus, existe 1 coringa por jogador. Se você tiver um coringa guardado, pode usá-lo no fim da rodada para adicionar +1 dose ao jogador mais votado.',
+    isJoker: true,
+};
+
 type GameRulesModalProps = {
     visible: boolean;
     isSoloMode?: boolean;
+    gameMode?: 'normal' | 'bonus' | string;
     onClose: () => void;
 };
 
 export function GameRulesModal({
     visible,
     isSoloMode = false,
+    gameMode = 'normal',
     onClose,
 }: GameRulesModalProps) {
+    const shouldShowBonus = !isSoloMode && gameMode === 'bonus';
+
     return (
         <Modal visible={visible} transparent animationType="fade">
             <View style={styles.modalOverlay}>
@@ -142,16 +155,29 @@ export function GameRulesModal({
                             </View>
                         ))}
 
-                        {!isSoloMode && (
-                            <View style={styles.bonusBox}>
-                                <Text style={styles.bonusTitle}>Bônus</Text>
+                        {shouldShowBonus && (
+                            <View style={[styles.ruleCard, styles.jokerRuleCard]}>
+                                <CardDeck value="Joker" index="0" isJoker />
 
-                                {BONUS_RULES.map((bonus, index) => (
-                                    <Text key={`${bonus}-${index}`} style={styles.bonusText}>
-                                        • {bonus}
+                                <View style={styles.ruleCardContent}>
+                                    <Text style={styles.ruleCardLabel}>Coringa — Bônus</Text>
+
+                                    <Text style={styles.ruleCardDescription}>
+                                        No modo bônus, existe 1 coringa por jogador no baralho. Se você guardar um coringa, pode usá-lo no fim da rodada para adicionar +1 dose ao jogador mais votado na votação secreta.
                                     </Text>
-                                ))}
+                                </View>
                             </View>
+                        )}
+
+                        {shouldShowBonus && (<View style={styles.bonusBox}>
+                            <Text style={styles.bonusTitle}>Bônus</Text>
+
+                            {BONUS_RULES.map((bonus, index) => (
+                                <Text key={`${bonus}-${index}`} style={styles.bonusText}>
+                                    • {bonus}
+                                </Text>
+                            ))}
+                        </View>
                         )}
                     </ScrollView>
 
@@ -270,5 +296,9 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontWeight: '900',
         fontSize: 15,
+    },
+    jokerRuleCard: {
+        backgroundColor: '#EAF6FF',
+        borderColor: '#4D82A9',
     },
 });

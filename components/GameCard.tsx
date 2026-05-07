@@ -50,6 +50,26 @@ function shouldShowSmallNumber(value: number) {
 }
 
 export function GameCard({ item, selected = false, onPress }: GameCardProps) {
+    const isJoker = item.actionType === 'joker' || item.category === 'coringa';
+
+    if (isJoker) {
+        return (
+            <TouchableOpacity
+                style={[styles.card, styles.jokerCard, selected && styles.cardSelected]}
+                onPress={onPress}
+                activeOpacity={0.85}
+            >
+                <Image
+                    source={require('../assets/images/cards/joker.png')}
+                    style={styles.jokerImage}
+                    resizeMode="contain"
+                />
+
+                <Text style={styles.jokerLabel}>CORINGA</Text>
+            </TouchableOpacity>
+        );
+    }
+
     const suit = getSuit(item.category);
     const displayValue = getDisplayValue(item.value);
     const showSmallNumber = shouldShowSmallNumber(item.value);
@@ -60,7 +80,6 @@ export function GameCard({ item, selected = false, onPress }: GameCardProps) {
             onPress={onPress}
             activeOpacity={0.85}
         >
-            {/* TOPO: valor esquerda + logo direita */}
             <View style={styles.topRow}>
                 <View style={styles.valueBlock}>
                     <Text style={styles.value}>{displayValue}</Text>
@@ -77,12 +96,10 @@ export function GameCard({ item, selected = false, onPress }: GameCardProps) {
                 />
             </View>
 
-            {/* CENTRO */}
             <View style={styles.center}>
                 <Text style={styles.centerSuit}>{suit}</Text>
             </View>
 
-            {/* BAIXO: logo esquerda + valor direita */}
             <View style={styles.bottomRow}>
                 <Image
                     source={require('../assets/images/fhblack.png')}
@@ -117,6 +134,27 @@ const styles = StyleSheet.create({
         borderColor: '#007AFF',
         backgroundColor: '#E7F3FF',
         transform: [{ translateY: -4 }],
+    },
+
+    jokerCard: {
+        backgroundColor: '#E5F3FE',
+        borderColor: '#4D82A9',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 8,
+    },
+
+    jokerImage: {
+        width: '92%',
+        height: '78%',
+    },
+
+    jokerLabel: {
+        color: '#2b1233',
+        fontSize: 12,
+        fontWeight: '900',
+        letterSpacing: 1,
+        marginTop: 2,
     },
 
     topRow: {

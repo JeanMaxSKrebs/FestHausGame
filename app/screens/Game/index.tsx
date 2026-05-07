@@ -920,6 +920,7 @@ const GameScreen = () => {
         <GameRulesModal
           visible={showRules}
           isSoloMode={isSoloMode}
+          gameMode={gameMode}
           onClose={() => setShowRules(false)}
         />
         <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -1082,6 +1083,7 @@ const GameScreen = () => {
       <GameRulesModal
         visible={showRules}
         isSoloMode={isSoloMode}
+        gameMode={gameState?.roomConfig?.gameMode || gameMode}
         onClose={() => setShowRules(false)}
       />
       <CardRevealModal

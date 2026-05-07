@@ -3,12 +3,25 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 type CardDeckProps = {
     value: string;
     index: string | number;
+    isJoker?: boolean;
 };
 
 const LETTER_VALUES = ['A', 'J', 'Q', 'K'];
 
-export function CardDeck({ value, index }: CardDeckProps) {
+export function CardDeck({ value, index, isJoker = false }: CardDeckProps) {
     const shouldShowIndex = LETTER_VALUES.includes(String(value).toUpperCase());
+
+    if (isJoker) {
+        return (
+            <View style={[styles.container, styles.jokerContainer]}>
+                <Image
+                    source={require('../assets/images/cards/joker.png')}
+                    style={styles.jokerImage}
+                    resizeMode="contain"
+                />
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
@@ -51,66 +64,78 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
     },
 
+    jokerContainer: {
+        backgroundColor: '#E5F3FE',
+        borderColor: '#4D82A9',
+        padding: 5,
+    },
+
+    jokerImage: {
+        width: '100%',
+        height: '100%',
+    },
+
     suit: {
         position: 'absolute',
         color: '#464B4E',
-        fontSize: 17,
+        fontSize: 18,
         fontWeight: '900',
+        lineHeight: 20,
     },
 
     suitTopLeft: {
-        top: 5,
+        top: 3,
         left: 3,
     },
 
     suitTopRight: {
-        top: 5,
+        top: 3,
         right: 3,
     },
 
     suitBottomLeft: {
-        bottom: 5,
+        bottom: 3,
         left: 3,
     },
 
     suitBottomRight: {
-        bottom: 5,
+        bottom: 3,
         right: 3,
     },
 
     centerContent: {
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: -12,
+        marginTop: -14,
     },
 
     value: {
         color: '#000000',
-        fontSize: 34,
+        fontSize: 36,
         fontWeight: '900',
         textAlign: 'center',
-        lineHeight: 38,
+        lineHeight: 40,
     },
 
     index: {
         color: '#000000',
         fontSize: 12,
         fontWeight: '800',
-        marginTop: -1,
+        marginTop: -2,
     },
 
     logoArea: {
         position: 'absolute',
-        bottom: 11,
-        left: 24,
-        right: 24,
-        height: 30,
+        bottom: 12,
+        left: 20,
+        right: 20,
+        height: 34,
         alignItems: 'center',
         justifyContent: 'center',
     },
 
     logoImage: {
-        width: 48,
-        height: 28,
+        width: 56,
+        height: 34,
     },
 });
