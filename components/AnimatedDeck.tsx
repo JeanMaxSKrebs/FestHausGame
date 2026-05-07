@@ -152,7 +152,7 @@ export function AnimatedDeck({
                 >
                     {spread >= 5 && (
                         <Image
-                            source={require('../assets/images/cardverso.png')}
+                            source={require('../assets/images/cards/cardverso.png')}
                             style={[styles.deckBackCard, styles.deckLayerFive]}
                             resizeMode="cover"
                         />
@@ -160,7 +160,7 @@ export function AnimatedDeck({
 
                     {spread >= 4 && (
                         <Image
-                            source={require('../assets/images/cardverso.png')}
+                            source={require('../assets/images/cards/cardverso.png')}
                             style={[styles.deckBackCard, styles.deckLayerFour]}
                             resizeMode="cover"
                         />
@@ -168,7 +168,7 @@ export function AnimatedDeck({
 
                     {spread >= 3 && (
                         <Image
-                            source={require('../assets/images/cardverso.png')}
+                            source={require('../assets/images/cards/cardverso.png')}
                             style={[styles.deckBackCard, styles.deckLayerThree]}
                             resizeMode="cover"
                         />
@@ -176,14 +176,14 @@ export function AnimatedDeck({
 
                     {spread >= 2 && (
                         <Image
-                            source={require('../assets/images/cardverso.png')}
+                            source={require('../assets/images/cards/cardverso.png')}
                             style={[styles.deckBackCard, styles.deckLayerTwo]}
                             resizeMode="cover"
                         />
                     )}
 
                     <Image
-                        source={require('../assets/images/cardverso.png')}
+                        source={require('../assets/images/cards/cardverso.png')}
                         style={styles.cardBack}
                         resizeMode="cover"
                     />
@@ -193,7 +193,7 @@ export function AnimatedDeck({
                     </View>
 
                     <Animated.Image
-                        source={require('../assets/images/cardverso.png')}
+                        source={require('../assets/images/cards/cardverso.png')}
                         style={[
                             styles.flyingCard,
                             {

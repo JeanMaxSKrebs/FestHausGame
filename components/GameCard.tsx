@@ -6,8 +6,10 @@ type GameCardProps = {
         name: string;
         category: string;
         value: number;
-        rarity?: string;
         isTrump?: boolean;
+        ruleTitle?: string;
+        ruleDescription?: string;
+        actionType?: string;
     };
     selected?: boolean;
     onPress?: () => void;

@@ -28,6 +28,21 @@ import { GameState, Player, PlayerHand } from '../../../game/types';
 import { WhatsAppBridge } from '../../../game/WhatsAppBridge';
 import { useFirestoreSync } from '../../../hooks/useFirestoreSync';
 
+
+function getTimeFromPossibleTimestamp(value: any) {
+  if (!value) return Date.now();
+
+  if (typeof value?.toDate === 'function') {
+    return value.toDate().getTime();
+  }
+
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  return new Date(value).getTime();
+}
+
 const MAX_PLAYERS = 12;
 const MIN_PLAYERS_TO_START = 2;
 
@@ -57,17 +72,22 @@ const GameScreen = () => {
   const [voteNow, setVoteNow] = useState(Date.now());
 
   const isJoinMode = params?.mode === 'join';
-  const canStartGame = currentPlayers >= MIN_PLAYERS_TO_START;
+  const isSoloMode = params?.soloMode === 'true';
+  const canStartGame = isSoloMode || currentPlayers >= MIN_PLAYERS_TO_START;
   const isHost = Boolean(user?.uid && gameManager?.getRoomConfig().hostId === user.uid);
+
+  const [bathroomName, setBathroomName] = useState('');
+  const [bathroomUsers, setBathroomUsers] = useState<string[]>([]);
+
+  const [generalRuleText, setGeneralRuleText] = useState('');
+  const [generalRules, setGeneralRules] = useState<string[]>([]);
 
   useEffect(() => {
     if (!gameState?.roundVote?.active) return;
 
     const interval = setInterval(() => {
       const endsAt = gameState.roundVote?.endsAt;
-      const endsAtTime = endsAt?.toDate?.()
-        ? endsAt.toDate().getTime()
-        : new Date(endsAt as any).getTime();
+      const endsAtTime = getTimeFromPossibleTimestamp(gameState?.roundVote?.endsAt);
 
       if (Date.now() >= endsAtTime) {
         clearInterval(interval);
@@ -96,7 +116,6 @@ const GameScreen = () => {
     return () => clearInterval(interval);
   }, [gameState?.roundVote?.active]);
 
-  const roundVote = gameState?.roundVote;
 
   function getTimeFromPossibleTimestamp(value: any) {
     if (!value) return Date.now();
@@ -112,6 +131,8 @@ const GameScreen = () => {
     return new Date(value).getTime();
   }
 
+
+  const roundVote = gameState?.roundVote;
   const roundVoteEndTime = getTimeFromPossibleTimestamp(roundVote?.endsAt);
 
   const voteSecondsLeft = Math.max(
@@ -137,6 +158,30 @@ const GameScreen = () => {
   const jokerUsed = Boolean(
     user?.uid && roundVote?.jokerUsers?.includes(user.uid)
   );
+
+  const handleAddBathroomUser = () => {
+    const name = bathroomName.trim();
+
+    if (!name) {
+      Alert.alert('Nome obrigatório', 'Digite o nome da pessoa.');
+      return;
+    }
+
+    setBathroomUsers((prev) => [...prev, name]);
+    setBathroomName('');
+  };
+
+  const handleAddGeneralRule = () => {
+    const rule = generalRuleText.trim();
+
+    if (!rule) {
+      Alert.alert('Regra obrigatória', 'Digite a regra geral.');
+      return;
+    }
+
+    setGeneralRules((prev) => [...prev, rule]);
+    setGeneralRuleText('');
+  };
 
   const handleVoteForPlayer = (targetPlayerId: string) => {
     try {
@@ -217,7 +262,7 @@ const GameScreen = () => {
     roomId: roomId || null,
     gameManager,
     userId: user?.uid || null,
-    enabled: Boolean(roomId && user?.uid),
+    enabled: Boolean(roomId && user?.uid && !isSoloMode),
 
     onRoomUpdate: (roomData) => {
       console.log('📝 Room atualizada via GameScreen:', roomData);
@@ -333,9 +378,10 @@ const GameScreen = () => {
           const newGameManager = new GameManager(
             newRoomId,
             user.uid,
-            params.roomType || 'waiting_room',
+            'waiting_room',
             MAX_PLAYERS,
-            gameMode
+            'normal',
+            isSoloMode
           );
 
           const currentPlayer: Player = {
@@ -348,30 +394,51 @@ const GameScreen = () => {
             isActive: true,
           };
 
+
+
+          if (isSoloMode) {
+            newGameManager.addPlayer(currentPlayer);
+
+            setupGameEventListeners(newGameManager);
+
+            setGameManager(newGameManager);
+            setRoomId(newRoomId);
+            setCurrentPlayers(1);
+            setRoomPlayers([]);
+            setGameStarted(false);
+            updateGameState(newGameManager);
+            setLoading(false);
+
+            return;
+          }
+
           newGameManager.addPlayer(currentPlayer);
 
-          try {
-            await FirestoreManager.createRoom(
-              newRoomId,
-              {
-                roomId: newRoomId,
-                roomType: (params.roomType || 'waiting_room') as any,
-                maxPlayers: MAX_PLAYERS as any,
-                hostId: user.uid,
-                currentPlayers: 1,
-                status: 'lobby',
-                createdAt: new Date(),
-                gameMode,
-              },
-              user.uid
-            );
+          if (!isSoloMode) {
 
-            await FirestoreManager.syncHostPlayer(newRoomId, currentPlayer);
+            try {
+              await FirestoreManager.createRoom(
+                newRoomId,
+                {
+                  roomId: newRoomId,
+                  roomType: (params.roomType || 'waiting_room') as any,
+                  maxPlayers: MAX_PLAYERS as any,
+                  hostId: user.uid,
+                  currentPlayers: 1,
+                  status: 'lobby',
+                  createdAt: new Date(),
+                  gameMode,
+                },
+                user.uid
+              );
 
-            console.log('✅ Sala criada e host sincronizado no Firestore:', newRoomId);
-          } catch (error) {
-            console.error('❌ Erro ao criar/sincronizar sala no Firestore:', error);
-            Alert.alert('Erro', 'Não foi possível criar a sala.');
+              await FirestoreManager.syncHostPlayer(newRoomId, currentPlayer);
+
+              console.log('✅ Sala criada e host sincronizado no Firestore:', newRoomId);
+            } catch (error) {
+              console.error('❌ Erro ao criar/sincronizar sala no Firestore:', error);
+              Alert.alert('Erro', 'Não foi possível criar a sala.');
+            }
           }
 
           setupGameEventListeners(newGameManager);
@@ -584,7 +651,7 @@ const GameScreen = () => {
       gameMode,
     });
 
-    if (!canStartGame) {
+    if (!isSoloMode && !canStartGame) {
       Alert.alert(
         'Aguardando jogadores',
         `É necessário no mínimo ${MIN_PLAYERS_TO_START} jogadores para começar. Atual: ${currentPlayers}.`
@@ -598,9 +665,11 @@ const GameScreen = () => {
         return;
       }
 
-      syncGameManagerPlayersFromFirestore(gameManager, roomPlayers);
+      if (!isSoloMode) {
+        syncGameManagerPlayersFromFirestore(gameManager, roomPlayers);
+      }
 
-      if (gameManager.getGameState().players.size < MIN_PLAYERS_TO_START) {
+      if (!isSoloMode && gameManager.getGameState().players.size < MIN_PLAYERS_TO_START) {
         Alert.alert(
           'Aguardando jogadores',
           `A sala mostra ${currentPlayers} jogador(es), mas a lista local ainda não sincronizou. Tente novamente em instantes.`
@@ -848,8 +917,11 @@ const GameScreen = () => {
 
     return (
       <SafeAreaView style={styles.container}>
-        <GameRulesModal visible={showRules} onClose={() => setShowRules(false)} />
-
+        <GameRulesModal
+          visible={showRules}
+          isSoloMode={isSoloMode}
+          onClose={() => setShowRules(false)}
+        />
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.content}>
             <Image
@@ -858,92 +930,122 @@ const GameScreen = () => {
               resizeMode="contain"
             />
 
-            <Text style={styles.title}>Sala de Espera</Text>
-            <Text style={styles.subtitle}>Você está como: {getPlayerName()}</Text>
-            <Text style={styles.roomId}>Código: {roomId}</Text>
+            <Text style={styles.title}>
+              {isSoloMode ? 'Modo Solo' : 'Sala de Espera'}
+            </Text>
 
-            <View style={styles.playerCountContainer}>
-              <Text style={styles.playerCount}>
-                Jogadores: {currentPlayers}/
-                {gameManager?.getRoomConfig().maxPlayers || MAX_PLAYERS}
-              </Text>
-            </View>
+            <Text style={styles.subtitle}>
+              {isSoloMode
+                ? 'Jogo local no mesmo celular.'
+                : `Você está como: ${getPlayerName()}`}
+            </Text>
 
-            <View style={styles.playersListContainer}>
-              <Text style={styles.playersTitle}>Jogadores na Sala</Text>
+            {!isSoloMode && <Text style={styles.roomId}>Código: {roomId}</Text>}
 
-              {playersToRender.length > 0 ? (
-                playersToRender.map((player) => (
-                  <View key={player.userId} style={styles.playerItem}>
-                    <Text style={styles.playerName}>{player.name}</Text>
-
-                    {gameManager && player.userId === gameManager.getRoomConfig().hostId && (
-                      <Text style={styles.hostBadge}>Host</Text>
-                    )}
-                  </View>
-                ))
-              ) : (
-                <Text style={styles.emptyPlayersText}>
-                  Aguardando jogadores...
+            {!isSoloMode && (
+              <View style={styles.playerCountContainer}>
+                <Text style={styles.playerCount}>
+                  Jogadores: {currentPlayers}/
+                  {gameManager?.getRoomConfig().maxPlayers || MAX_PLAYERS}
                 </Text>
-              )}
-            </View>
+              </View>
+            )}
+
+            {!isSoloMode && (
+              <View style={styles.playersListContainer}>
+                <Text style={styles.playersTitle}>Jogadores na Sala</Text>
+
+                {playersToRender.length > 0 ? (
+                  playersToRender.map((player) => (
+                    <View key={player.userId} style={styles.playerItem}>
+                      <Text style={styles.playerName}>{player.name}</Text>
+
+                      {gameManager &&
+                        player.userId === gameManager.getRoomConfig().hostId && (
+                          <Text style={styles.hostBadge}>Host</Text>
+                        )}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.emptyPlayersText}>
+                    Aguardando jogadores...
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {isSoloMode && (
+              <View style={styles.soloInfoBox}>
+                <Text style={styles.soloInfoTitle}>Como funciona</Text>
+                <Text style={styles.soloInfoText}>
+                  Uma pessoa controla o celular e passa para o próximo jogador a cada turno.
+                </Text>
+              </View>
+            )}
 
             {isHost && (
               <>
-                <GameModeSelector gameMode={gameMode} onChange={setGameMode} />
+                {!isSoloMode && (
+                  <GameModeSelector gameMode={gameMode} onChange={setGameMode} />
+                )}
 
-                <TouchableOpacity
-                  style={[styles.button, styles.whatsappButton]}
-                  onPress={handleInviteWhatsApp}
-                  activeOpacity={0.8}
-                >
-                  <FontAwesome name="whatsapp" size={18} color="#fff" />
-                  <Text style={styles.buttonText}>CONVIDAR PELO WHATSAPP</Text>
-                </TouchableOpacity>
+                {!isSoloMode && (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.button, styles.whatsappButton]}
+                      onPress={handleInviteWhatsApp}
+                      activeOpacity={0.8}
+                    >
+                      <FontAwesome name="whatsapp" size={18} color="#fff" />
+                      <Text style={styles.buttonText}>CONVIDAR PELO WHATSAPP</Text>
+                    </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.button, styles.copyButton]}
-                  onPress={handleCopyInvite}
-                  activeOpacity={0.8}
-                >
-                  <FontAwesome name="copy" size={18} color="#fff" />
-                  <Text style={styles.buttonText}>COPIAR LINK DA SALA</Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.button, styles.copyButton]}
+                      onPress={handleCopyInvite}
+                      activeOpacity={0.8}
+                    >
+                      <FontAwesome name="copy" size={18} color="#fff" />
+                      <Text style={styles.buttonText}>COPIAR LINK DA SALA</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
 
                 <TouchableOpacity
                   style={[styles.button, styles.rulesButton]}
                   onPress={() => setShowRules(true)}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.buttonText}>VER REGRAS E BÔNUS</Text>
+                  <Text style={styles.buttonText}>
+                    {isSoloMode ? 'VER REGRAS' : 'VER REGRAS E BÔNUS'}
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={[
                     styles.button,
                     styles.startButton,
-                    !canStartGame && styles.disabledButton,
+                    !canStartGame && !isSoloMode && styles.disabledButton,
                   ]}
                   onPress={handleStartGame}
-                  disabled={!canStartGame}
+                  disabled={!canStartGame && !isSoloMode}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.buttonText}>
-                    COMEÇAR JOGO ({currentPlayers}/{MIN_PLAYERS_TO_START} min)
+                    {isSoloMode ? 'COMEÇAR JOGO' : 'COMEÇAR JOGO'}
                   </Text>
                 </TouchableOpacity>
               </>
             )}
 
-            {!isHost && (
+            {!isHost && !isSoloMode && (
               <>
                 <TouchableOpacity
                   style={[styles.button, styles.rulesButton]}
                   onPress={() => setShowRules(true)}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.buttonText}>VER REGRAS E BÔNUS</Text>
+                  <Text style={styles.buttonText}>{isSoloMode ? 'VER REGRAS' : 'VER REGRAS E BÔNUS'}</Text>
                 </TouchableOpacity>
 
                 <View style={styles.waitingCard}>
@@ -959,7 +1061,9 @@ const GameScreen = () => {
               onPress={() => router.back()}
               activeOpacity={0.8}
             >
-              <Text style={styles.buttonText}>SAIR DA SALA</Text>
+              <Text style={styles.buttonText}>
+                {isSoloMode ? 'SAIR DO MODO SOLO' : 'SAIR DA SALA'}
+              </Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -975,13 +1079,27 @@ const GameScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <GameRulesModal visible={showRules} onClose={() => setShowRules(false)} />
+      <GameRulesModal
+        visible={showRules}
+        isSoloMode={isSoloMode}
+        onClose={() => setShowRules(false)}
+      />
       <CardRevealModal
-        visible={revealModalVisible && Boolean(drawnCard) && isMyTurn}
+        visible={revealModalVisible && Boolean(drawnCard) && (isSoloMode || isMyTurn)}
         card={drawnCard}
-        savedCard={playerHand?.items?.[0] || null}
-        isMyTurn={isMyTurn}
-        hasSavedCard={(playerHand?.items.length || 0) >= 1}
+        savedCard={isSoloMode ? null : playerHand?.items?.[0] || null}
+        isMyTurn={isSoloMode ? true : isMyTurn}
+        hasSavedCard={isSoloMode ? false : (playerHand?.items.length || 0) >= 1}
+        soloMode={isSoloMode}
+
+        bathroomName={bathroomName}
+        onBathroomNameChange={setBathroomName}
+        onSaveBathroomName={handleAddBathroomUser}
+
+        generalRuleText={generalRuleText}
+        onGeneralRuleTextChange={setGeneralRuleText}
+        onSaveGeneralRule={handleAddGeneralRule}
+
         onUseNow={handlePlayDrawnCard}
         onKeep={handleKeepDrawnCard}
         onTradeBathroom={handleTradeBathroomCard}
@@ -1000,28 +1118,37 @@ const GameScreen = () => {
       />
       <ScrollView contentContainerStyle={styles.gameScrollContent}>
         <View style={styles.gameContainer}>
-          <GameStatusPanel
-            round={gameState?.round || 1}
-            mode={gameState?.roomConfig?.gameMode || 'normal'}
-            currentPlayerName={currentTurnPlayerName}
-            isMyTurn={isMyTurn}
-            cardsLeft={gameState?.itemPool?.length || 0}
-            kingCupCount={gameState?.kingCupCount || 0}
-          />
+          {!isSoloMode ? (
+            <GameStatusPanel
+              round={gameState?.round || 1}
+              mode={gameState?.roomConfig?.gameMode || 'normal'}
+              currentPlayerName={currentTurnPlayerName}
+              isMyTurn={isMyTurn}
+              cardsLeft={gameState?.itemPool?.length || 0}
+              kingCupCount={gameState?.kingCupCount || 0}
+            />
+          ) : (
+            <View style={styles.soloGameStatus}>
+              <Text style={styles.soloGameTitle}>Modo Solo</Text>
+              <Text style={styles.soloGameSubtitle}>
+                {gameState?.itemPool?.length || 0} cartas no monte
+              </Text>
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.button, styles.rulesButton]}
             onPress={() => setShowRules(true)}
             activeOpacity={0.8}
           >
-            <Text style={styles.buttonText}>VER REGRAS E BÔNUS</Text>
+            <Text style={styles.buttonText}>{isSoloMode ? 'VER REGRAS' : 'VER REGRAS E BÔNUS'}</Text>
           </TouchableOpacity>
 
           <View style={styles.tableArea}>
             <Text style={styles.tableTitle}>Mesa central</Text>
 
             <AnimatedDeck
-              isMyTurn={isMyTurn}
+              isMyTurn={isSoloMode ? true : isMyTurn}
               hasDrawnCard={Boolean(drawnCard)}
               cardsLeft={gameState?.itemPool?.length || 0}
               onDraw={handleDrawCard}
@@ -1050,6 +1177,8 @@ const GameScreen = () => {
               </Text>
             </View>
           )}
+
+          {!isSoloMode && (
 
           <View style={styles.handContainer}>
             <View style={styles.sectionHeader}>
@@ -1090,8 +1219,12 @@ const GameScreen = () => {
               </View>
             )}
           </View>
+          )}
 
-          {selectedCard && (
+
+
+
+          {!isSoloMode && selectedCard && (
             <View style={styles.selectedCardActions}>
               <View style={styles.selectedCardInfo}>
                 <Text style={styles.selectedCardLabel}>Carta selecionada</Text>
@@ -1118,6 +1251,30 @@ const GameScreen = () => {
             </View>
           )}
 
+          {isSoloMode && bathroomUsers.length > 0 && (
+            <View style={styles.soloListBox}>
+              <Text style={styles.soloListTitle}>🚻 Banheiros</Text>
+
+              {bathroomUsers.map((name, index) => (
+                <Text key={`${name}-${index}`} style={styles.soloListItem}>
+                  {index + 1}. {name}
+                </Text>
+              ))}
+            </View>
+          )}
+
+          {isSoloMode && generalRules.length > 0 && (
+            <View style={styles.soloListBox}>
+              <Text style={styles.soloListTitle}>📜 Regras Gerais</Text>
+
+              {generalRules.map((rule, index) => (
+                <Text key={`${rule}-${index}`} style={styles.soloListItem}>
+                  {index + 1}. {rule}
+                </Text>
+              ))}
+            </View>
+          )}
+
           <View style={styles.logContainer}>
             <View style={styles.sectionHeader}>
               <Text style={styles.logTitle}>Histórico</Text>
@@ -1138,7 +1295,7 @@ const GameScreen = () => {
             )}
           </View>
 
-          {isHost && gameState && (
+          {!isSoloMode &&isHost && gameState && (
             <View style={styles.hostPanel}>
               <Text style={styles.hostPanelTitle}>Controles do host</Text>
 
@@ -1758,6 +1915,76 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '900',
     fontSize: 12,
+  },
+  soloInfoBox: {
+    width: '100%',
+    backgroundColor: '#f7f1fb',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+  },
+
+  soloInfoTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#2b1233',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+
+  soloInfoText: {
+    textAlign: 'center',
+    color: '#555',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  soloGameStatus: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+    alignItems: 'center',
+  },
+
+  soloGameTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#2b1233',
+  },
+
+  soloGameSubtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '700',
+  },
+  soloListBox: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+  },
+
+  soloListTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#2b1233',
+    marginBottom: 8,
+  },
+
+  soloListItem: {
+    fontSize: 14,
+    color: '#444',
+    fontWeight: '700',
+    marginBottom: 5,
+    lineHeight: 20,
   },
 });
 

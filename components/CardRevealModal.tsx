@@ -5,6 +5,7 @@ import {
     Modal,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
@@ -21,6 +22,14 @@ type CardRevealModalProps = {
     onKeep: () => void;
     onTradeBathroom?: () => void;
     onClose?: () => void;
+    soloMode?: boolean;
+    bathroomName?: string;
+    onBathroomNameChange?: (value: string) => void;
+    onSaveBathroomName?: () => void;
+
+    generalRuleText?: string;
+    onGeneralRuleTextChange?: (value: string) => void;
+    onSaveGeneralRule?: () => void;
 };
 
 function getFallbackRule(value: number) {
@@ -104,6 +113,16 @@ export function CardRevealModal({
     savedCard,
     isMyTurn,
     hasSavedCard,
+    soloMode = false,
+
+    bathroomName = '',
+    onBathroomNameChange,
+    onSaveBathroomName,
+
+    generalRuleText = '',
+    onGeneralRuleTextChange,
+    onSaveGeneralRule,
+
     onUseNow,
     onKeep,
     onTradeBathroom,
@@ -114,6 +133,7 @@ export function CardRevealModal({
     const flipAnim = useRef(new Animated.Value(0)).current;
 
     const isBathroomCard = card?.value === 10;
+    const isGeneralRuleCard = card?.value === 8;
 
     useEffect(() => {
         if (!visible || !card) {
@@ -218,6 +238,51 @@ export function CardRevealModal({
                         <Text style={styles.ruleDescription}>{ruleDescription}</Text>
                     </View>
 
+                    {soloMode && isBathroomCard && (
+                        <View style={styles.extraInputBox}>
+                            <Text style={styles.extraInputTitle}>Quem pegou banheiro?</Text>
+
+                            <TextInput
+                                style={styles.extraInput}
+                                value={bathroomName}
+                                onChangeText={onBathroomNameChange}
+                                placeholder="Nome da pessoa"
+                                placeholderTextColor="#999"
+                            />
+
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.bathroomButton]}
+                                onPress={onSaveBathroomName}
+                                activeOpacity={0.85}
+                            >
+                                <Text style={styles.actionText}>ADICIONAR BANHEIRO</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
+                    {soloMode && isGeneralRuleCard && (
+                        <View style={styles.extraInputBox}>
+                            <Text style={styles.extraInputTitle}>Nova regra geral</Text>
+
+                            <TextInput
+                                style={[styles.extraInput, styles.extraTextArea]}
+                                value={generalRuleText}
+                                onChangeText={onGeneralRuleTextChange}
+                                placeholder="Ex: proibido falar a palavra beber"
+                                placeholderTextColor="#999"
+                                multiline
+                            />
+
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.ruleButton]}
+                                onPress={onSaveGeneralRule}
+                                activeOpacity={0.85}
+                            >
+                                <Text style={styles.actionText}>ADICIONAR REGRA</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
                     {isMyTurn ? (
                         <View style={styles.actions}>
                             <TouchableOpacity
@@ -228,7 +293,7 @@ export function CardRevealModal({
                                 <Text style={styles.actionText}>USAR AGORA</Text>
                             </TouchableOpacity>
 
-                            {!hasSavedCard && (
+                            {!soloMode && !hasSavedCard && (
                                 <TouchableOpacity
                                     style={[styles.actionButton, styles.keepButton]}
                                     onPress={onKeep}
@@ -238,7 +303,7 @@ export function CardRevealModal({
                                 </TouchableOpacity>
                             )}
 
-                            {hasSavedCard && isBathroomCard && (
+                            {!soloMode && hasSavedCard && isBathroomCard && (
                                 <TouchableOpacity
                                     style={[styles.actionButton, styles.tradeButton]}
                                     onPress={handleTradePress}
@@ -248,7 +313,7 @@ export function CardRevealModal({
                                 </TouchableOpacity>
                             )}
 
-                            {hasSavedCard && !isBathroomCard && (
+                            {!soloMode && hasSavedCard && !isBathroomCard && (
                                 <Text style={styles.shortWarning}>
                                     Já tem carta guardada.
                                 </Text>
@@ -405,5 +470,48 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '900',
         textAlign: 'center',
+    },
+    extraInputBox: {
+        width: '100%',
+        backgroundColor: '#fffaf0',
+        borderRadius: 16,
+        padding: 12,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#ffdca8',
+    },
+
+    extraInputTitle: {
+        color: '#2b1233',
+        fontWeight: '900',
+        fontSize: 15,
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+
+    extraInput: {
+        width: '100%',
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#eadcf5',
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        color: '#333',
+        fontSize: 15,
+        marginBottom: 10,
+    },
+
+    extraTextArea: {
+        minHeight: 70,
+        textAlignVertical: 'top',
+    },
+
+    bathroomButton: {
+        backgroundColor: '#00AEEF',
+    },
+
+    ruleButton: {
+        backgroundColor: '#8E44AD',
     },
 });

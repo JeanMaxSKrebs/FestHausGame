@@ -94,7 +94,6 @@ export class FirestoreManager {
       name: item?.name || '',
       category: item?.category || '',
       value: Number(item?.value || 0),
-      rarity: item?.rarity || 'comum',
       isTrump: Boolean(item?.isTrump),
       ruleTitle: item?.ruleTitle || '',
       ruleDescription: item?.ruleDescription || '',

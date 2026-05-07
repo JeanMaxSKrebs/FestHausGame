@@ -3,8 +3,6 @@
  * Jogo estilo copo central / baralho no meio.
  */
 
-export type ItemRarity = 'comum' | 'raro' | 'épico' | 'lendário';
-
 export type GameMode = 'normal' | 'bonus';
 
 export type ItemCategory = 'espadas' | 'ouro' | 'copas' | 'paus' | 'coringa';
@@ -39,7 +37,6 @@ export interface Item {
   name: string;
   category: ItemCategory;
   value: number;
-  rarity: ItemRarity;
   isTrump?: boolean;
 
   ruleTitle?: string;
@@ -131,7 +128,6 @@ export interface ItemPoolConfig {
   maxPlayers: number;
   totalItems: number;
   categoriesDistribution: Partial<Record<ItemCategory, number>>;
-  rarityDistribution: Record<ItemRarity, number>;
 }
 
 export interface ValidationResult {

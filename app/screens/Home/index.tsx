@@ -82,6 +82,23 @@ const Home = () => {
     });
   };
 
+  const handleSoloMode = async () => {
+    const safeNickname = await getSafeNickname();
+
+    if (!safeNickname) return;
+
+    router.push({
+      pathname: '/screens/Game',
+      params: {
+        createNew: 'true',
+        roomType: 'solo',
+        soloMode: 'true',
+        maxPlayers: String(MAX_PLAYERS),
+        nickname: safeNickname,
+      },
+    });
+  };
+
   const handleJoinRoom = async () => {
     const safeNickname = await getSafeNickname();
 
@@ -141,6 +158,25 @@ const Home = () => {
 
         <View style={styles.gameOptionsContainer}>
           <Text style={styles.sectionTitle}>Jogar Agora</Text>
+
+          <TouchableOpacity
+            style={[styles.gameOption, styles.soloOption]}
+            onPress={handleSoloMode}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.gameOptionIcon, styles.soloIcon]}>
+              <FontAwesome name="mobile" size={30} color="#fff" />
+            </View>
+
+            <View style={styles.gameOptionContent}>
+              <Text style={styles.gameOptionTitle}>Modo Solo</Text>
+              <Text style={styles.gameOptionDesc}>
+                Jogue com várias pessoas usando apenas um celular, sem criar sala online.
+              </Text>
+            </View>
+
+            <FontAwesome name="chevron-right" size={20} color="#8E44AD" />
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.gameOption}
@@ -346,6 +382,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  soloOption: {
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+  },
+
+  soloIcon: {
+    backgroundColor: '#8E44AD',
   },
 });
 

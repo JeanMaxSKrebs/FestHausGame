@@ -12,7 +12,6 @@ import {
   Item,
   ItemCategory,
   ItemPoolConfig,
-  ItemRarity,
   Player,
   PlayerHand,
   RoomConfig,
@@ -25,13 +24,15 @@ export class GameManager {
   private itemPoolConfig: ItemPoolConfig;
   private roomId: string;
   private roomType: RoomType;
+  private isSoloMode: boolean = false;
 
   constructor(
     roomId: string,
     hostId: string,
     roomType: RoomType,
     maxPlayers: number = 12,
-    gameMode: GameMode = 'normal'
+    gameMode: GameMode = 'normal',
+    isSoloMode: boolean = false
   ) {
     this.roomId = roomId;
     this.roomType = roomType;
@@ -64,10 +65,11 @@ export class GameManager {
       kingCupCount: 0,
       tradeLockedPlayers: {},
     };
-
+    this.isSoloMode = isSoloMode;
     this.initializeItemPool();
     
   }
+  
 
   private calculateItemPoolConfig(maxPlayers: number): ItemPoolConfig {
     const totalItems = 52;
@@ -84,12 +86,6 @@ export class GameManager {
         copas: itemsPerCategory,
         paus: itemsPerCategory,
         coringa: 0,
-      },
-      rarityDistribution: {
-        comum: 32,
-        raro: 12,
-        épico: 6,
-        lendário: 2,
       },
     };
   }
@@ -206,21 +202,11 @@ export class GameManager {
       for (let value = 1; value <= 13; value++) {
         const rule = this.getCardRule(value);
 
-        const rarity: ItemRarity =
-          value === 1 || value === 13
-            ? 'lendário'
-            : value >= 10
-              ? 'épico'
-              : value >= 7
-                ? 'raro'
-                : 'comum';
-
         items.push({
           id: `card_${category}_${value}_${itemId}`,
           name: this.getDisplayName(category, value),
           category,
           value,
-          rarity,
           isTrump: false,
           ruleTitle: rule.title,
           ruleDescription: rule.description,
@@ -252,7 +238,6 @@ export class GameManager {
       name: item.name,
       category: item.category,
       value: item.value,
-      rarity: item.rarity,
       isTrump: Boolean(item.isTrump),
       ruleTitle: item.ruleTitle || '',
       ruleDescription: item.ruleDescription || '',
@@ -410,7 +395,6 @@ export class GameManager {
         name: 'Coringa',
         category: 'coringa',
         value: 0,
-        rarity: 'lendário',
         isTrump: false,
         ruleTitle: 'Coringa',
         ruleDescription:
@@ -423,7 +407,7 @@ export class GameManager {
   }
 
   startGame(): void {
-    if (this.gameState.players.size < 2) {
+    if (!this.isSoloMode && this.gameState.players.size < 2) {
       throw new Error('É necessário no mínimo 2 jogadores para começar.');
     }
 
@@ -431,7 +415,9 @@ export class GameManager {
     this.gameState.roomConfig.status = 'playing';
     this.gameState.roomConfig.startedAt = new Date();
     this.gameState.round = 1;
-    this.addJokersForPlayers();
+    if (!this.isSoloMode && this.gameState.roomConfig.gameMode === 'bonus') {
+      this.addJokersForPlayers();
+    }    
     Array.from(this.gameState.players.keys()).forEach((playerId) => {
       this.ensurePlayerHand(playerId);
     });
@@ -439,11 +425,13 @@ export class GameManager {
     const firstPlayerId = Array.from(this.gameState.players.keys())[0];
     this.startTurn(firstPlayerId);
 
-    FirestoreManager.startGame(this.roomId, this.getSerializableGameState() as any).catch(
-      (error) => {
-        console.error('Erro ao iniciar jogo no Firestore:', error);
-      }
-    );
+    if (!this.isSoloMode) {
+      FirestoreManager.startGame(this.roomId, this.getSerializableGameState() as any).catch(
+        (error) => {
+          console.error('Erro ao iniciar jogo no Firestore:', error);
+        }
+      );
+    }
 
     this.emit('game_finished', {
       status: 'started',
@@ -567,12 +555,16 @@ export class GameManager {
     this.applyCardEffect(playerId, turn.drawnCard);
     this.gameState.discardPile.push(turn.drawnCard);
 
-    this.addGameLog(
-      playerId,
-      'Carta usada',
-      `${this.gameState.players.get(playerId)?.name || 'Jogador'} usou ${turn.drawnCard.name}: ${rule.title} — ${rule.description}`,
-      turn.drawnCard
-    );
+    const shouldShowInHistory = turn.drawnCard.value !== 4;
+
+    if (shouldShowInHistory) {
+      this.addGameLog(
+        playerId,
+        'Carta usada',
+        `${this.gameState.players.get(playerId)?.name || 'Jogador'} usou ${turn.drawnCard.name}: ${rule.title} — ${rule.description}`,
+        turn.drawnCard
+      );
+    }
 
     this.finishCurrentTurn();
   }
@@ -594,12 +586,16 @@ export class GameManager {
     this.applyCardEffect(playerId, card);
     this.gameState.discardPile.push(card);
 
-    this.addGameLog(
-      playerId,
-      'Carta guardada usada',
-      `${this.gameState.players.get(playerId)?.name || 'Jogador'} usou a carta guardada ${card.name}: ${rule.title} — ${rule.description}`,
-      card
-    );
+    const shouldShowInHistory = card.value !== 4;
+
+    if (shouldShowInHistory) {
+      this.addGameLog(
+        playerId,
+        'Carta guardada usada',
+        `${this.gameState.players.get(playerId)?.name || 'Jogador'} usou a carta guardada ${card.name}: ${rule.title} — ${rule.description}`,
+        card
+      );
+    }
 
     this.syncStateToFirestore();
 
@@ -720,11 +716,13 @@ export class GameManager {
   }
 
   private syncStateToFirestore(): void {
-    FirestoreManager.updateGameState(this.roomId, this.getSerializableGameState() as any).catch(
-      (error) => {
-        console.error('Erro ao sincronizar estado do jogo:', error);
-      }
-    );
+    if (this.isSoloMode) {
+      return;
+    }
+
+    FirestoreManager.updateGameState(this.roomId, this.gameState).catch((error) => {
+      console.error('Erro ao sincronizar estado do jogo:', error);
+    });
   }
 
   finishGame(): void {
