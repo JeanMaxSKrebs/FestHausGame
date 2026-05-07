@@ -1,13 +1,12 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useContext, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { AppLoadingScreen } from '../components/AppLoadingScreen';
-import { AuthUserContext, AuthUserProvider } from '../context/AuthUserProvider';
+import { AuthUserProvider } from '../context/AuthUserProvider';
 import { WhatsAppBridge } from '../game/WhatsAppBridge';
 
 // Suppress MetaMask web3 injection errors on web platform
@@ -33,10 +32,8 @@ export const unstable_settings = {
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
-  const { user, loading } = useContext(AuthUserContext);
   const router = useRouter();
 
-  // Setup Deep Link Handler
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
 
@@ -66,30 +63,10 @@ function RootLayoutNav() {
     };
   }, [router]);
 
-  // Redirect based on auth state
-  useEffect(() => {
-    if (loading) return;
-
-    const timeout = setTimeout(() => {
-      if (user) {
-        router.replace('/screens/Home');
-      } else {
-        router.replace('/screens/SignIn');
-      }
-    }, 100);
-
-    return () => clearTimeout(timeout);
-  }, [user, loading, router]);
-
-  if (loading) {
-    return <AppLoadingScreen />;
-  }
-
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
-
         <Stack.Screen name="screens" />
 
         <Stack.Screen

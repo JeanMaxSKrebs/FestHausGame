@@ -14,7 +14,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AnimatedDeck } from '../../../components/AnimatedDeck';
+import { CardRevealModal } from '../../../components/CardRevealModal';
 import { GameCard } from '../../../components/GameCard';
+import { GameModeSelector } from '../../../components/GameModeSelector';
+import { GameRulesModal } from '../../../components/GameRulesModal';
+import { GameStatusPanel } from '../../../components/GameStatusPanel';
+import { RoundVoteModal } from '../../../components/RoundVoteModal';
 import { AuthUserContext } from '../../../context/AuthUserProvider';
 import { FirestoreManager, FirestorePlayerData } from '../../../game/FirestoreManager';
 import { GameManager } from '../../../game/GameManager';
@@ -44,9 +50,115 @@ const GameScreen = () => {
   const [selectedCard, setSelectedCard] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
+  const [gameMode, setGameMode] = useState<'normal' | 'bonus'>('normal');
+  const [showRules, setShowRules] = useState(false);
+
+  const [revealModalVisible, setRevealModalVisible] = useState(false);
+  const [voteNow, setVoteNow] = useState(Date.now());
+
   const isJoinMode = params?.mode === 'join';
   const canStartGame = currentPlayers >= MIN_PLAYERS_TO_START;
   const isHost = Boolean(user?.uid && gameManager?.getRoomConfig().hostId === user.uid);
+
+  useEffect(() => {
+    if (!gameState?.roundVote?.active) return;
+
+    const interval = setInterval(() => {
+      const endsAt = gameState.roundVote?.endsAt;
+      const endsAtTime = endsAt?.toDate?.()
+        ? endsAt.toDate().getTime()
+        : new Date(endsAt as any).getTime();
+
+      if (Date.now() >= endsAtTime) {
+        clearInterval(interval);
+
+        try {
+          if (gameManager && isHost) {
+            gameManager.finishRoundVote();
+            updateGameState(gameManager);
+          }
+        } catch (error: any) {
+          console.warn('Erro ao finalizar votação:', error?.message || error);
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [gameState?.roundVote?.active, gameManager, isHost]);
+
+  useEffect(() => {
+    if (!gameState?.roundVote?.active) return;
+
+    const interval = setInterval(() => {
+      setVoteNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [gameState?.roundVote?.active]);
+
+  const roundVote = gameState?.roundVote;
+
+  function getTimeFromPossibleTimestamp(value: any) {
+    if (!value) return Date.now();
+
+    if (typeof value?.toDate === 'function') {
+      return value.toDate().getTime();
+    }
+
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+
+    return new Date(value).getTime();
+  }
+
+  const roundVoteEndTime = getTimeFromPossibleTimestamp(roundVote?.endsAt);
+
+  const voteSecondsLeft = Math.max(
+    0,
+    Math.ceil((roundVoteEndTime - voteNow) / 1000)
+  );
+
+  const currentUserVote = user?.uid && roundVote?.votes
+    ? roundVote.votes[user.uid]
+    : undefined;
+
+  const playerListForVote = gameState
+    ? Array.from(gameState.players.values()).map((player) => ({
+      id: player.id,
+      name: player.name,
+    }))
+    : [];
+
+  const hasJoker = Boolean(
+    playerHand?.items?.some((item: any) => item.actionType === 'joker')
+  );
+
+  const jokerUsed = Boolean(
+    user?.uid && roundVote?.jokerUsers?.includes(user.uid)
+  );
+
+  const handleVoteForPlayer = (targetPlayerId: string) => {
+    try {
+      if (!gameManager || !user?.uid) return;
+
+      gameManager.voteForPlayer(user.uid, targetPlayerId);
+      updateGameState(gameManager);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || String(error));
+    }
+  };
+
+  const handleUseJokerVote = () => {
+    try {
+      if (!gameManager || !user?.uid) return;
+
+      gameManager.useJokerInRoundVote(user.uid);
+      updateGameState(gameManager);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || String(error));
+    }
+  };
 
   const getPlayerName = () => {
     const paramNickname = params?.nickname ? String(params.nickname).trim() : '';
@@ -54,6 +166,8 @@ const GameScreen = () => {
 
     return paramNickname || fallbackName;
   };
+
+
 
   const goToJoinScreen = () => {
     router.replace({
@@ -92,6 +206,11 @@ const GameScreen = () => {
     state.roomConfig.currentPlayers = state.players.size;
 
     setGameState({ ...state });
+
+    if (user?.uid) {
+      const hand = manager.getPlayerHand(user.uid);
+      setPlayerHand(hand || null);
+    }
   };
 
   useFirestoreSync({
@@ -99,6 +218,82 @@ const GameScreen = () => {
     gameManager,
     userId: user?.uid || null,
     enabled: Boolean(roomId && user?.uid),
+
+    onRoomUpdate: (roomData) => {
+      console.log('📝 Room atualizada via GameScreen:', roomData);
+
+      if (roomData.status === 'in_progress' && roomData.gameState) {
+        setGameStarted(true);
+
+        if (gameManager) {
+          const state = gameManager.getGameState();
+
+          state.status = roomData.gameState.status || 'active';
+          state.round = Number(roomData.gameState.round || 1);
+          state.currentTurn = roomData.gameState.currentTurn || null;
+
+          state.itemPool = Array.isArray(roomData.gameState.itemPool)
+            ? roomData.gameState.itemPool
+            : [];
+
+          state.discardPile = Array.isArray(roomData.gameState.discardPile)
+            ? roomData.gameState.discardPile
+            : [];
+
+          state.gameLog = Array.isArray(roomData.gameState.gameLog)
+            ? roomData.gameState.gameLog
+            : [];
+
+          state.kingCupCount = Number(roomData.gameState.kingCupCount || 0);
+          state.roomConfig.status = 'playing';
+          state.roomConfig.gameMode = roomData.gameState.roomConfig?.gameMode || 'normal';
+
+          if (Array.isArray(roomData.gameState.players)) {
+            roomData.gameState.players.forEach((player: any) => {
+              const playerId = player.id || player.userId;
+
+              if (!playerId) return;
+
+              state.players.set(playerId, {
+                id: playerId,
+                name: player.name || 'Jogador',
+                email: player.email || '',
+                phone: player.phone || '',
+                joinedAt: player.joinedAt?.toDate?.() || new Date(),
+                isActive: true,
+              });
+            });
+          }
+
+          if (Array.isArray(roomData.gameState.playerHands)) {
+            state.playerHands.clear();
+
+            roomData.gameState.playerHands.forEach((hand: any) => {
+              if (!hand?.playerId) return;
+
+              state.playerHands.set(hand.playerId, {
+                playerId: hand.playerId,
+                items: Array.isArray(hand.items) ? hand.items : [],
+                isLeader: Boolean(hand.isLeader),
+                score: Number(hand.score || 0),
+              });
+            });
+
+            if (user?.uid) {
+              setPlayerHand(state.playerHands.get(user.uid) || null);
+            }
+          }
+
+          setGameState({ ...state });
+        }
+      }
+
+      if (roomData.status === 'finished') {
+        setGameStarted(false);
+        Alert.alert('Jogo finalizado', 'A partida foi encerrada.');
+      }
+    },
+
     onPlayersUpdate: (players) => {
       console.log('👥 Players atualizado via Firestore:', players);
 
@@ -109,6 +304,7 @@ const GameScreen = () => {
         syncGameManagerPlayersFromFirestore(gameManager, players);
       }
     },
+
     onError: (error: any) => {
       console.error('❌ Erro na sincronização Firestore:', error);
     },
@@ -138,7 +334,8 @@ const GameScreen = () => {
             newRoomId,
             user.uid,
             params.roomType || 'waiting_room',
-            MAX_PLAYERS
+            MAX_PLAYERS,
+            gameMode
           );
 
           const currentPlayer: Player = {
@@ -164,6 +361,7 @@ const GameScreen = () => {
                 currentPlayers: 1,
                 status: 'lobby',
                 createdAt: new Date(),
+                gameMode,
               },
               user.uid
             );
@@ -192,6 +390,7 @@ const GameScreen = () => {
               isReady: true,
             },
           ]);
+
           updateGameState(newGameManager);
         } else if (params.roomId) {
           const existingRoomId = String(params.roomId).trim();
@@ -239,7 +438,8 @@ const GameScreen = () => {
               existingRoomId,
               roomData.createdBy,
               roomData.roomType || 'waiting_room',
-              roomData.maxPlayers || MAX_PLAYERS
+              roomData.maxPlayers || MAX_PLAYERS,
+              roomData.gameState?.roomConfig?.gameMode || 'normal'
             );
 
             joinedGameManager.addPlayer(currentPlayer);
@@ -272,12 +472,9 @@ const GameScreen = () => {
     };
 
     initializeGame();
-
-    // A inicialização da sala deve rodar apenas quando muda o modo/room/auth.
-    // As funções internas usam os valores atuais e initializedRef evita recriações.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params?.roomId, params?.createNew, isJoinMode, user?.uid, authLoading]);
-  
+
   const setupGameEventListeners = (manager: GameManager) => {
     manager.on('player_joined', () => {
       updateGameState(manager);
@@ -291,6 +488,14 @@ const GameScreen = () => {
     });
 
     manager.on('turn_started', () => {
+      updateGameState(manager);
+    });
+
+    manager.on('card_drawn', () => {
+      updateGameState(manager);
+    });
+
+    manager.on('card_kept', () => {
       updateGameState(manager);
     });
 
@@ -376,6 +581,7 @@ const GameScreen = () => {
       canStartGame,
       min: MIN_PLAYERS_TO_START,
       isHost,
+      gameMode,
     });
 
     if (!canStartGame) {
@@ -402,7 +608,9 @@ const GameScreen = () => {
         return;
       }
 
+      gameManager.getGameState().roomConfig.gameMode = gameMode;
       gameManager.startGame();
+
       setGameStarted(true);
       updateGameState(gameManager);
     } catch (error: any) {
@@ -410,14 +618,77 @@ const GameScreen = () => {
     }
   };
 
-  const handlePlayCard = (cardId: string) => {
+  const handleDrawCard = () => {
     try {
       if (!gameManager || !user?.uid) {
         Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
         return;
       }
 
-      gameManager.playCard(user.uid, cardId);
+      gameManager.drawCard(user.uid);
+      updateGameState(gameManager);
+
+      setTimeout(() => {
+        setRevealModalVisible(true);
+      }, 120);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || String(error));
+    }
+  };
+
+  const handlePlayDrawnCard = () => {
+    try {
+      if (!gameManager || !user?.uid) {
+        Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
+        return;
+      }
+
+      gameManager.playDrawnCard(user.uid);
+      setRevealModalVisible(false);
+      updateGameState(gameManager);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || String(error));
+    }
+  };
+
+  const handleKeepDrawnCard = () => {
+    try {
+      if (!gameManager || !user?.uid) {
+        Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
+        return;
+      }
+
+      gameManager.keepDrawnCard(user.uid);
+      setRevealModalVisible(false);
+      updateGameState(gameManager);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || String(error));
+    }
+  };
+
+  const handleTradeBathroomCard = () => {
+    try {
+      if (!gameManager || !user?.uid) {
+        Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
+        return;
+      }
+
+      gameManager.tradeBathroomCard(user.uid);
+      setRevealModalVisible(false);
+      updateGameState(gameManager);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || String(error));
+    }
+  };
+
+  const handlePlaySavedCard = (cardId: string) => {
+    try {
+      if (!gameManager || !user?.uid) {
+        Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
+        return;
+      }
+
+      gameManager.playSavedCard(user.uid, cardId);
       setSelectedCard(null);
       updateGameState(gameManager);
     } catch (error: any) {
@@ -577,6 +848,8 @@ const GameScreen = () => {
 
     return (
       <SafeAreaView style={styles.container}>
+        <GameRulesModal visible={showRules} onClose={() => setShowRules(false)} />
+
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.content}>
             <Image
@@ -591,7 +864,8 @@ const GameScreen = () => {
 
             <View style={styles.playerCountContainer}>
               <Text style={styles.playerCount}>
-                Jogadores: {currentPlayers}/{gameManager?.getRoomConfig().maxPlayers || MAX_PLAYERS}
+                Jogadores: {currentPlayers}/
+                {gameManager?.getRoomConfig().maxPlayers || MAX_PLAYERS}
               </Text>
             </View>
 
@@ -617,6 +891,8 @@ const GameScreen = () => {
 
             {isHost && (
               <>
+                <GameModeSelector gameMode={gameMode} onChange={setGameMode} />
+
                 <TouchableOpacity
                   style={[styles.button, styles.whatsappButton]}
                   onPress={handleInviteWhatsApp}
@@ -633,6 +909,14 @@ const GameScreen = () => {
                 >
                   <FontAwesome name="copy" size={18} color="#fff" />
                   <Text style={styles.buttonText}>COPIAR LINK DA SALA</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.button, styles.rulesButton]}
+                  onPress={() => setShowRules(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.buttonText}>VER REGRAS E BÔNUS</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -653,11 +937,21 @@ const GameScreen = () => {
             )}
 
             {!isHost && (
-              <View style={styles.waitingCard}>
-                <Text style={styles.waitingText}>
-                  Aguardando o host iniciar o jogo...
-                </Text>
-              </View>
+              <>
+                <TouchableOpacity
+                  style={[styles.button, styles.rulesButton]}
+                  onPress={() => setShowRules(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.buttonText}>VER REGRAS E BÔNUS</Text>
+                </TouchableOpacity>
+
+                <View style={styles.waitingCard}>
+                  <Text style={styles.waitingText}>
+                    Aguardando o host iniciar o jogo...
+                  </Text>
+                </View>
+              </>
             )}
 
             <TouchableOpacity
@@ -673,59 +967,241 @@ const GameScreen = () => {
     );
   }
 
+  const isMyTurn = gameState?.currentTurn?.currentPlayerId === user.uid;
+  const currentTurnPlayerName =
+    gameState?.players.get(gameState?.currentTurn?.currentPlayerId || '')?.name ||
+    'Jogador';
+  const drawnCard = gameState?.currentTurn?.drawnCard || null;
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.gameContainer}>
-        <View style={styles.gameInfo}>
-          <Text style={styles.gameTitle}>Fest Haus Game</Text>
-          <Text style={styles.roundInfo}>Rodada {gameState?.round}</Text>
-        </View>
+      <GameRulesModal visible={showRules} onClose={() => setShowRules(false)} />
+      <CardRevealModal
+        visible={revealModalVisible && Boolean(drawnCard) && isMyTurn}
+        card={drawnCard}
+        savedCard={playerHand?.items?.[0] || null}
+        isMyTurn={isMyTurn}
+        hasSavedCard={(playerHand?.items.length || 0) >= 1}
+        onUseNow={handlePlayDrawnCard}
+        onKeep={handleKeepDrawnCard}
+        onTradeBathroom={handleTradeBathroomCard}
+        onClose={() => setRevealModalVisible(false)}
+      />
+      <RoundVoteModal
+        visible={Boolean(gameState?.roundVote?.active)}
+        players={playerListForVote}
+        currentUserId={user.uid}
+        selectedVote={currentUserVote}
+        hasJoker={hasJoker}
+        jokerUsed={jokerUsed}
+        secondsLeft={voteSecondsLeft}
+        onVote={handleVoteForPlayer}
+        onUseJoker={handleUseJokerVote}
+      />
+      <ScrollView contentContainerStyle={styles.gameScrollContent}>
+        <View style={styles.gameContainer}>
+          <GameStatusPanel
+            round={gameState?.round || 1}
+            mode={gameState?.roomConfig?.gameMode || 'normal'}
+            currentPlayerName={currentTurnPlayerName}
+            isMyTurn={isMyTurn}
+            cardsLeft={gameState?.itemPool?.length || 0}
+            kingCupCount={gameState?.kingCupCount || 0}
+          />
 
-        <View style={styles.handContainer}>
-          <Text style={styles.handTitle}>
-            Sua Mão ({playerHand?.items.length || 0} cartas)
-          </Text>
+          <TouchableOpacity
+            style={[styles.button, styles.rulesButton]}
+            onPress={() => setShowRules(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonText}>VER REGRAS E BÔNUS</Text>
+          </TouchableOpacity>
 
-          <ScrollView horizontal style={styles.cardsScroll}>
-            {playerHand?.items?.map((item: any) => (
-              <GameCard
-                key={item.id}
-                item={item}
-                selected={selectedCard?.id === item.id}
-                onPress={() => setSelectedCard(item)}
-              />
-            ))}
-          </ScrollView>
-        </View>
+          <View style={styles.tableArea}>
+            <Text style={styles.tableTitle}>Mesa central</Text>
 
-        {selectedCard && (
-          <View style={styles.actionsContainer}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => handlePlayCard(selectedCard.id)}
-            >
-              <Text style={styles.actionButtonText}>Jogar Carta</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.cancelButton]}
-              onPress={() => setSelectedCard(null)}
-            >
-              <Text style={styles.actionButtonText}>Cancelar</Text>
-            </TouchableOpacity>
+            <AnimatedDeck
+              isMyTurn={isMyTurn}
+              hasDrawnCard={Boolean(drawnCard)}
+              cardsLeft={gameState?.itemPool?.length || 0}
+              onDraw={handleDrawCard}
+            />
           </View>
-        )}
 
-        <View style={styles.logContainer}>
-          <Text style={styles.logTitle}>Turno Atual</Text>
-
-          {gameState?.currentTurn && (
-            <Text style={styles.logText}>
-              Líder: {gameState.players.get(gameState.currentTurn.leaderId)?.name}
-            </Text>
+          {drawnCard && isMyTurn && (
+            <TouchableOpacity
+              style={styles.reopenRevealButton}
+              onPress={() => setRevealModalVisible(true)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.reopenRevealText}>
+                Ver sua carta revelada
+              </Text>
+            </TouchableOpacity>
           )}
+
+          {drawnCard && !isMyTurn && (
+            <View style={styles.hiddenCardNotice}>
+              <Text style={styles.hiddenCardTitle}>
+                {currentTurnPlayerName} comprou uma carta
+              </Text>
+              <Text style={styles.hiddenCardText}>
+                A carta só será revelada quando for usada.
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.handContainer}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.handTitle}>Cartas guardadas</Text>
+
+              <View style={styles.handBadge}>
+                <Text style={styles.handBadgeText}>
+                  {playerHand?.items.length || 0}
+                </Text>
+              </View>
+            </View>
+
+            {playerHand?.items?.length ? (
+              <ScrollView
+                horizontal
+                style={styles.cardsScroll}
+                contentContainerStyle={styles.cardsScrollContent}
+                showsHorizontalScrollIndicator={false}
+              >
+                {playerHand.items.map((item: any) => (
+                  <GameCard
+                    key={item.id}
+                    item={item}
+                    selected={selectedCard?.id === item.id}
+                    onPress={() => setSelectedCard(item)}
+                  />
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.emptyHandBox}>
+                <Text style={styles.emptyHandIcon}>🃏</Text>
+                <Text style={styles.emptyHandText}>
+                  Você ainda não guardou nenhuma carta.
+                </Text>
+                <Text style={styles.emptyHandHint}>
+                  Compre uma carta na sua vez e escolha “Guardar”.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {selectedCard && (
+            <View style={styles.selectedCardActions}>
+              <View style={styles.selectedCardInfo}>
+                <Text style={styles.selectedCardLabel}>Carta selecionada</Text>
+                <Text style={styles.selectedCardName}>{selectedCard.name}</Text>
+              </View>
+
+              <View style={styles.actionsContainer}>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.useNowButton]}
+                  onPress={() => handlePlaySavedCard(selectedCard.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.actionButtonText}>USAR GUARDADA</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.cancelButton]}
+                  onPress={() => setSelectedCard(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.actionButtonText}>CANCELAR</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          <View style={styles.logContainer}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.logTitle}>Histórico</Text>
+              <Text style={styles.logSubtitle}>últimas ações</Text>
+            </View>
+
+            {gameState?.gameLog?.length ? (
+              gameState.gameLog.slice(0, 5).map((log: any) => (
+                <View key={log.id} style={styles.logItem}>
+                  <Text style={styles.logBullet}>•</Text>
+                  <Text style={styles.logText}>{log.description}</Text>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyLogBox}>
+                <Text style={styles.logText}>Nenhuma ação ainda.</Text>
+              </View>
+            )}
+          </View>
+
+          {isHost && gameState && (
+            <View style={styles.hostPanel}>
+              <Text style={styles.hostPanelTitle}>Controles do host</Text>
+
+              {Array.from(gameState.players.values())
+                .filter((player) => player.id !== user.uid)
+                .map((player) => (
+                  <View key={player.id} style={styles.hostPlayerRow}>
+                    <Text style={styles.hostPlayerName}>{player.name}</Text>
+
+                    <TouchableOpacity
+                      style={[styles.hostSmallButton, styles.hostTransferButton]}
+                      onPress={() => {
+                        try {
+                          gameManager?.transferHost(user.uid, player.id);
+                          updateGameState(gameManager!);
+                        } catch (error: any) {
+                          Alert.alert('Erro', error?.message || String(error));
+                        }
+                      }}
+                    >
+                      <Text style={styles.hostSmallButtonText}>Host</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.hostSmallButton, styles.hostKickButton]}
+                      onPress={() => {
+                        Alert.alert(
+                          'Banir jogador?',
+                          `Remover ${player.name} da partida?`,
+                          [
+                            { text: 'Cancelar', style: 'cancel' },
+                            {
+                              text: 'Banir',
+                              style: 'destructive',
+                              onPress: () => {
+                                try {
+                                  gameManager?.kickPlayerByHost(user.uid, player.id);
+                                  updateGameState(gameManager!);
+                                } catch (error: any) {
+                                  Alert.alert('Erro', error?.message || String(error));
+                                }
+                              },
+                            },
+                          ]
+                        );
+                      }}
+                    >
+                      <Text style={styles.hostSmallButtonText}>Banir</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[styles.button, styles.dangerButton, styles.exitGameButton]}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonText}>SAIR DA PARTIDA</Text>
+          </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -733,26 +1209,36 @@ const GameScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f4eff8',
   },
+
   scrollContent: {
     flexGrow: 1,
   },
+
+  gameScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
+  },
+
   content: {
     flex: 1,
     padding: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
+
   gameContainer: {
     flex: 1,
     padding: 15,
   },
+
   logo: {
     width: 100,
     height: 100,
     marginBottom: 20,
   },
+
   title: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -760,6 +1246,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textAlign: 'center',
   },
+
   subtitle: {
     fontSize: 14,
     color: '#666',
@@ -767,6 +1254,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+
   input: {
     width: '100%',
     backgroundColor: '#fff',
@@ -778,12 +1266,14 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 15,
   },
+
   roomId: {
     fontSize: 15,
     color: '#666',
     marginBottom: 20,
     textAlign: 'center',
   },
+
   playerCountContainer: {
     backgroundColor: '#fff',
     padding: 15,
@@ -791,12 +1281,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     width: '100%',
   },
+
   playerCount: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#7c3aed',
     textAlign: 'center',
   },
+
   playersListContainer: {
     backgroundColor: '#fff',
     padding: 15,
@@ -804,12 +1296,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     width: '100%',
   },
+
   playersTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 10,
   },
+
   playerItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -818,12 +1312,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
+
   playerName: {
     fontSize: 14,
     color: '#333',
   },
+
   hostBadge: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#7c3aed',
     color: '#fff',
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -831,12 +1327,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
+
   emptyPlayersText: {
     fontSize: 13,
     color: '#666',
     textAlign: 'center',
     paddingVertical: 10,
   },
+
   waitingCard: {
     width: '100%',
     backgroundColor: '#fff',
@@ -844,16 +1342,18 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
   },
+
   waitingText: {
     color: '#666',
     textAlign: 'center',
     fontSize: 14,
     fontWeight: '600',
   },
+
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#7c3aed',
     padding: 15,
-    borderRadius: 8,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
@@ -861,88 +1361,403 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
+
   secondaryButton: {
     backgroundColor: '#666',
   },
+
   whatsappButton: {
     backgroundColor: '#25D366',
   },
+
   copyButton: {
     backgroundColor: '#5856D6',
   },
+
+  rulesButton: {
+    backgroundColor: '#8E44AD',
+  },
+
   startButton: {
     backgroundColor: '#34C759',
   },
+
   dangerButton: {
     backgroundColor: '#FF3B30',
   },
+
   disabledButton: {
     opacity: 0.55,
   },
+
   buttonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '900',
+    textAlign: 'center',
   },
-  gameInfo: {
+
+  tableArea: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    marginBottom: 20,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+
+  tableTitle: {
+    fontSize: 13,
+    color: '#7c3aed',
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+
+  drawnCardBox: {
+    backgroundColor: '#fff',
+    borderRadius: 22,
+    padding: 16,
     marginBottom: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  gameTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  roundInfo: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 5,
-  },
-  handContainer: {
-    marginBottom: 20,
-  },
-  handTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
+
+  drawnLabel: {
+    fontSize: 12,
+    color: '#7c3aed',
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
     marginBottom: 10,
   },
+
+  revealedCardWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+
+  ruleInfoBox: {
+    width: '100%',
+    backgroundColor: '#f7f1fb',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+  },
+
+  ruleCardTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#2b1233',
+    textAlign: 'center',
+  },
+
+  ruleCardDescription: {
+    fontSize: 14,
+    color: '#555',
+    lineHeight: 20,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+
+  handContainer: {
+    marginBottom: 20,
+    backgroundColor: '#fff',
+    borderRadius: 22,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+
+  handTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#2b1233',
+  },
+
+  handBadge: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#7c3aed',
+  },
+
+  handBadgeText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
   cardsScroll: {
     minHeight: 180,
   },
+
+  cardsScrollContent: {
+    paddingRight: 12,
+  },
+
+  emptyHandBox: {
+    backgroundColor: '#f7f1fb',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+    alignItems: 'center',
+  },
+
+  emptyHandIcon: {
+    fontSize: 34,
+    marginBottom: 8,
+  },
+
+  emptyHandText: {
+    color: '#2b1233',
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  emptyHandHint: {
+    color: '#777',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 17,
+  },
+
   actionsContainer: {
     flexDirection: 'row',
     marginBottom: 20,
     gap: 10,
+    width: '100%',
   },
+
   actionButton: {
     flex: 1,
-    backgroundColor: '#007AFF',
-    padding: 12,
-    borderRadius: 8,
+    backgroundColor: '#7c3aed',
+    padding: 13,
+    borderRadius: 12,
     alignItems: 'center',
   },
+
+  useNowButton: {
+    backgroundColor: '#34C759',
+  },
+
+  keepButton: {
+    backgroundColor: '#5856D6',
+  },
+
   cancelButton: {
     backgroundColor: '#FF3B30',
   },
+
   actionButtonText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontWeight: '900',
+    textAlign: 'center',
+    fontSize: 13,
   },
+
+  selectedCardActions: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+  },
+
+  selectedCardInfo: {
+    marginBottom: 10,
+  },
+
+  selectedCardLabel: {
+    fontSize: 12,
+    color: '#777',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+
+  selectedCardName: {
+    fontSize: 17,
+    color: '#2b1233',
+    fontWeight: '900',
+    marginTop: 2,
+  },
+
   logContainer: {
     backgroundColor: '#fff',
     padding: 15,
-    borderRadius: 8,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
+
   logTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#2b1233',
   },
+
+  logSubtitle: {
+    fontSize: 12,
+    color: '#777',
+    fontWeight: '700',
+  },
+
+  logItem: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 6,
+  },
+
+  logBullet: {
+    color: '#7c3aed',
+    fontSize: 16,
+    lineHeight: 19,
+  },
+
   logText: {
+    flex: 1,
     fontSize: 13,
     color: '#666',
+    lineHeight: 19,
+  },
+
+  emptyLogBox: {
+    backgroundColor: '#f7f1fb',
+    borderRadius: 12,
+    padding: 12,
+  },
+
+  exitGameButton: {
+    marginTop: 16,
+  },
+
+  reopenRevealButton: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+    alignItems: 'center',
+  },
+
+  reopenRevealText: {
+    color: '#7c3aed',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  hiddenCardNotice: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+    alignItems: 'center',
+  },
+
+  hiddenCardTitle: {
+    color: '#2b1233',
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  hiddenCardText: {
+    color: '#777',
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  hostPanel: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+  },
+
+  hostPanelTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#2b1233',
+    marginBottom: 10,
+  },
+
+  hostPlayerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+
+  hostPlayerName: {
+    flex: 1,
+    color: '#333',
+    fontWeight: '800',
+  },
+
+  hostSmallButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+
+  hostTransferButton: {
+    backgroundColor: '#5856D6',
+  },
+
+  hostKickButton: {
+    backgroundColor: '#FF3B30',
+  },
+
+  hostSmallButtonText: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 12,
   },
 });
 

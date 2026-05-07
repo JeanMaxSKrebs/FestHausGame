@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "1 - Metro Emulador 8081",
+            "label": "1 - Iniciar Metro Único (8081)",
             "type": "shell",
             "command": "npx expo start --dev-client -c --port 8081",
             "options": {
@@ -11,60 +11,42 @@
             "problemMatcher": [],
             "presentation": {
                 "panel": "new",
-                "group": "metros",
                 "reveal": "always",
                 "clear": true
             }
         },
         {
-            "label": "2 - Metro Celular 8082",
+            "label": "2 - Abrir no Emulador",
             "type": "shell",
-            "command": "npx expo start --dev-client -c --port 8082",
+            "command": "adb -s emulator-5554 reverse tcp:8081 tcp:8081; adb -s emulator-5554 shell am start -a android.intent.action.VIEW -d \"festhausgame://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081\"",
             "options": {
                 "cwd": "C:\\FestHausGame"
             },
             "problemMatcher": [],
             "presentation": {
                 "panel": "new",
-                "group": "metros",
-                "reveal": "always",
-                "clear": true
+                "group": "apps",
+                "reveal": "always"
             }
         },
         {
-            "label": "3 - Abrir Emulador 8081",
+            "label": "3 - Abrir no Celular (USB)",
             "type": "shell",
-            "command": "adb -s emulator-5554 reverse --remove-all; adb -s emulator-5554 reverse tcp:8081 tcp:8081; adb -s emulator-5554 shell am force-stop com.festhausgame; adb -s emulator-5554 shell am start -W -a android.intent.action.VIEW -d \"festhausgame://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081\"",
+            "command": "adb -s SC8T5LBMVKWKWWP7 reverse tcp:8081 tcp:8081; adb -s SC8T5LBMVKWKWWP7 shell am start -a android.intent.action.VIEW -d \"festhausgame://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081\"",
             "options": {
                 "cwd": "C:\\FestHausGame"
             },
             "problemMatcher": [],
             "presentation": {
                 "panel": "new",
-                "group": "abrir-apps",
-                "reveal": "always",
-                "clear": true
+                "group": "apps",
+                "reveal": "always"
             }
         },
         {
-            "label": "4 - Abrir Celular 8082",
+            "label": "4 - Logs Emulador",
             "type": "shell",
-            "command": "adb -s SC8T5LBMVKWKWWP7 reverse --remove-all; adb -s SC8T5LBMVKWKWWP7 reverse tcp:8082 tcp:8082; adb -s SC8T5LBMVKWKWWP7 shell am force-stop com.festhausgame; adb -s SC8T5LBMVKWKWWP7 shell am start -W -a android.intent.action.VIEW -d \"festhausgame://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082\"",
-            "options": {
-                "cwd": "C:\\FestHausGame"
-            },
-            "problemMatcher": [],
-            "presentation": {
-                "panel": "new",
-                "group": "abrir-apps",
-                "reveal": "always",
-                "clear": true
-            }
-        },
-        {
-            "label": "5 - Logs Emulador",
-            "type": "shell",
-            "command": "adb -s emulator-5554 logcat | findstr /I \"ReactNativeJS ReactNative JavascriptException AndroidRuntime expo com.festhausgame 8081\"",
+            "command": "adb -s emulator-5554 logcat | Select-String 'ReactNativeJS|ReactNative|JavascriptException'",
             "options": {
                 "cwd": "C:\\FestHausGame"
             },
@@ -72,14 +54,13 @@
             "presentation": {
                 "panel": "new",
                 "group": "logs",
-                "reveal": "always",
-                "clear": true
+                "reveal": "always"
             }
         },
         {
-            "label": "6 - Logs Celular",
+            "label": "5 - Logs Celular",
             "type": "shell",
-            "command": "adb -s SC8T5LBMVKWKWWP7 logcat | findstr /I \"ReactNativeJS ReactNative JavascriptException AndroidRuntime expo com.festhausgame 8082\"",
+            "command": "adb -s SC8T5LBMVKWKWWP7 logcat | Select-String 'ReactNativeJS|ReactNative|JavascriptException'",
             "options": {
                 "cwd": "C:\\FestHausGame"
             },
@@ -87,8 +68,7 @@
             "presentation": {
                 "panel": "new",
                 "group": "logs",
-                "reveal": "always",
-                "clear": true
+                "reveal": "always"
             }
         }
     ]

@@ -87,6 +87,8 @@ export class FirestoreManager {
   }
 
   private static serializeItem(item: any) {
+    if (!item) return null;
+
     return this.clean({
       id: item?.id || '',
       name: item?.name || '',
@@ -94,6 +96,9 @@ export class FirestoreManager {
       value: Number(item?.value || 0),
       rarity: item?.rarity || 'comum',
       isTrump: Boolean(item?.isTrump),
+      ruleTitle: item?.ruleTitle || '',
+      ruleDescription: item?.ruleDescription || '',
+      actionType: item?.actionType || 'drink',
     });
   }
 
@@ -159,12 +164,16 @@ export class FirestoreManager {
     const serialized = {
       roundNumber: Number(turn.roundNumber || turn.round || 1),
       turnNumber: Number(turn.turnNumber || 1),
-      leaderId: String(turn.leaderId || ''),
-      playedCards: this.serializePlayedCards(turn.playedCards),
+
+      leaderId: String(turn.leaderId || turn.currentPlayerId || ''),
+      currentPlayerId: String(turn.currentPlayerId || turn.leaderId || ''),
+
+      drawnCard: turn.drawnCard ? this.serializeItem(turn.drawnCard) : null,
+      keptCard: turn.keptCard ? this.serializeItem(turn.keptCard) : null,
+      playedCard: turn.playedCard ? this.serializeItem(turn.playedCard) : null,
+
+      actionTaken: turn.actionTaken || 'skipped',
       timestamp: turn.timestamp || Timestamp.now(),
-      ...(turn.trumpCategory ? { trumpCategory: turn.trumpCategory } : {}),
-      ...(turn.winnerPlayerId ? { winnerPlayerId: turn.winnerPlayerId } : {}),
-      ...(turn.winnerId ? { winnerId: turn.winnerId } : {}),
     };
 
     return this.clean(serialized);
@@ -205,12 +214,15 @@ export class FirestoreManager {
           )
           : [];
 
+          
+
     const turns = Array.isArray(gameState?.turns)
       ? gameState.turns.map((turn: any) => this.serializeTurn(turn)).filter(Boolean)
       : [];
 
     const serializable = {
       roomId: gameState?.roomId || '',
+
       roomConfig: {
         roomId: gameState?.roomConfig?.roomId || gameState?.roomId || '',
         roomType: gameState?.roomConfig?.roomType || 'waiting_room',
@@ -222,22 +234,55 @@ export class FirestoreManager {
         status: gameState?.roomConfig?.status || 'playing',
         createdAt: gameState?.roomConfig?.createdAt || Timestamp.now(),
         startedAt: gameState?.roomConfig?.startedAt || Timestamp.now(),
+        endedAt: gameState?.roomConfig?.endedAt || null,
+        gameMode: gameState?.roomConfig?.gameMode || 'normal',
       },
+
       players,
+
       playerHands,
+
       itemPool: Array.isArray(gameState?.itemPool)
         ? gameState.itemPool.map((item: any) => this.serializeItem(item))
         : [],
+
+      discardPile: Array.isArray(gameState?.discardPile)
+        ? gameState.discardPile.map((item: any) => this.serializeItem(item))
+        : [],
+
       currentTurn: gameState?.currentTurn
         ? this.serializeTurn(gameState.currentTurn)
         : null,
+
       turns,
+
       round: Number(gameState?.round || 1),
+
       gameHistory: Array.isArray(gameState?.gameHistory)
-        ? gameState.gameHistory
+        ? gameState.gameHistory.map((turn: any) => this.serializeTurn(turn)).filter(Boolean)
         : [],
+
+      gameLog: Array.isArray(gameState?.gameLog)
+        ? gameState.gameLog.map((log: any) =>
+          this.clean({
+            id: log?.id || `log_${Date.now()}`,
+            playerId: log?.playerId || '',
+            playerName: log?.playerName || 'Jogador',
+            card: log?.card ? this.serializeItem(log.card) : null,
+            action: log?.action || '',
+            description: log?.description || '',
+            createdAt: log?.createdAt || Timestamp.now(),
+          })
+        )
+        : [],
+
       status: gameState?.status || 'active',
-      rankings: Array.isArray(gameState?.rankings) ? gameState.rankings : [],
+
+      rankings: Array.isArray(gameState?.rankings)
+        ? gameState.rankings
+        : [],
+
+      kingCupCount: Number(gameState?.kingCupCount || 0),
     };
 
     return this.clean(serializable);
@@ -463,6 +508,26 @@ export class FirestoreManager {
       console.log('✅ Turno finalizado:', winnerId, 'venceu');
     } catch (error) {
       console.error('❌ Erro ao finalizar turno:', error);
+      throw error;
+    }
+  }
+
+  static async updateGameState(roomId: string, gameState: any): Promise<void> {
+    try {
+      const roomRef = doc(this.db, 'rooms', roomId);
+      const serializableGameState = this.serializeGameState(gameState);
+
+      await updateDoc(roomRef, {
+        status:
+          serializableGameState.status === 'finished'
+            ? 'finished'
+            : 'in_progress',
+        gameState: serializableGameState,
+      });
+
+      console.log('✅ Estado do jogo atualizado no Firestore');
+    } catch (error) {
+      console.error('❌ Erro ao atualizar estado do jogo:', error);
       throw error;
     }
   }

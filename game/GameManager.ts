@@ -1,11 +1,13 @@
 /**
- * GameManager - Core Engine para Gerenciamento de Jogo de Turnos
+ * GameManager - Fest Haus Game
+ * Baralho central + turno + cartas guardadas + modo bônus.
  */
 
 import { FirestoreManager } from './FirestoreManager';
 import {
   GameEvent,
   GameEventType,
+  GameMode,
   GameState,
   Item,
   ItemCategory,
@@ -14,8 +16,7 @@ import {
   Player,
   PlayerHand,
   RoomConfig,
-  RoomType,
-  ValidationResult,
+  RoomType
 } from './types';
 
 export class GameManager {
@@ -24,13 +25,13 @@ export class GameManager {
   private itemPoolConfig: ItemPoolConfig;
   private roomId: string;
   private roomType: RoomType;
-  private currentTurnId: string | null = null;
 
   constructor(
     roomId: string,
     hostId: string,
     roomType: RoomType,
-    maxPlayers: number = 12
+    maxPlayers: number = 12,
+    gameMode: GameMode = 'normal'
   ) {
     this.roomId = roomId;
     this.roomType = roomType;
@@ -47,25 +48,29 @@ export class GameManager {
         currentPlayers: 0,
         status: 'lobby',
         createdAt: new Date(),
+        gameMode,
       },
       players: new Map(),
       playerHands: new Map(),
       itemPool: [],
+      discardPile: [],
       currentTurn: null as any,
       turns: [],
       round: 0,
       gameHistory: [],
+      gameLog: [],
       status: 'waiting',
       rankings: [],
+      kingCupCount: 0,
+      tradeLockedPlayers: {},
     };
 
     this.initializeItemPool();
+    
   }
 
   private calculateItemPoolConfig(maxPlayers: number): ItemPoolConfig {
-    const itemsPerPlayer = 10;
-    const discardBuffer = Math.ceil(maxPlayers * 2);
-    const totalItems = maxPlayers * itemsPerPlayer + discardBuffer;
+    const totalItems = 52;
 
     const categories: ItemCategory[] = ['espadas', 'ouro', 'copas', 'paus'];
     const itemsPerCategory = Math.ceil(totalItems / categories.length);
@@ -78,37 +83,148 @@ export class GameManager {
         ouro: itemsPerCategory,
         copas: itemsPerCategory,
         paus: itemsPerCategory,
+        coringa: 0,
       },
       rarityDistribution: {
-        comum: Math.ceil(totalItems * 0.5),
-        raro: Math.ceil(totalItems * 0.3),
-        épico: Math.ceil(totalItems * 0.15),
-        lendário: Math.ceil(totalItems * 0.05),
+        comum: 32,
+        raro: 12,
+        épico: 6,
+        lendário: 2,
       },
     };
   }
 
+  private getCardRule(value: number) {
+    switch (value) {
+      case 1:
+        return {
+          title: 'Escolhe um',
+          description: 'Você escolhe alguém para dar 1 gole.',
+          actionType: 'drink' as const,
+        };
+      case 2:
+        return {
+          title: 'Escolhe dois',
+          description: 'Você escolhe duas pessoas para beber ou uma pessoa para beber 2 vezes.',
+          actionType: 'drink' as const,
+        };
+      case 3:
+        return {
+          title: 'Escolhe três',
+          description: 'Você escolhe três pessoas ou distribui 3 goles.',
+          actionType: 'drink' as const,
+        };
+      case 4:
+        return {
+          title: 'Dedo na Mesa',
+          description:
+            'Você coloca o dedo discretamente na mesa. O último que perceber bebe. No modo bônus, pode cancelar se perder ou dobrar a dose do perdedor.',
+          actionType: 'table_finger' as const,
+        };
+      case 5:
+        return {
+          title: 'Cavalheiro',
+          description: 'Todos os homens bebem.',
+          actionType: 'drink' as const,
+        };
+      case 6:
+        return {
+          title: 'Damas',
+          description: 'Todas as mulheres bebem.',
+          actionType: 'drink' as const,
+        };
+      case 7:
+        return {
+          title: 'Pium',
+          description:
+            'Começa uma contagem. No 7, múltiplos de 7 ou números com 7, deve-se dizer Pium. Quem errar bebe.',
+          actionType: 'mini_game' as const,
+        };
+      case 8:
+        return {
+          title: 'Regra Geral',
+          description:
+            'Você cria uma regra. Quem descumprir até o fim do jogo bebe.',
+          actionType: 'rule' as const,
+        };
+      case 9:
+        return {
+          title: 'Stop',
+          description:
+            'Você escolhe um tema. Cada jogador fala um item. Quem travar ou repetir bebe.',
+          actionType: 'mini_game' as const,
+        };
+      case 10:
+        return {
+          title: 'Banheiro',
+          description:
+            'Só você pode ir ao banheiro ou sair da mesa. Pode guardar ou negociar essa carta.',
+          actionType: 'bathroom' as const,
+        };
+      case 11:
+        return {
+          title: 'O da Esquerda',
+          description: 'Quem está à sua esquerda bebe.',
+          actionType: 'drink' as const,
+        };
+      case 12:
+        return {
+          title: 'O da Direita',
+          description: 'Quem está à sua direita bebe.',
+          actionType: 'drink' as const,
+        };
+      case 13:
+        return {
+          title: 'Rei do Copo',
+          description:
+            'Os 3 primeiros reis colocam bebida no copo central. O 4º rei vira o copo.',
+          actionType: 'king_cup' as const,
+        };
+      default:
+        return {
+          title: 'Carta',
+          description: 'Cumpra a regra da carta.',
+          actionType: 'drink' as const,
+        };
+    }
+  }
+
+  private getDisplayName(category: ItemCategory, value: number) {
+    const label =
+      value === 1 ? 'Ás' : value === 11 ? 'Valete' : value === 12 ? 'Dama' : value === 13 ? 'Rei' : String(value);
+
+    return `${label} de ${category}`;
+  }
+
   private initializeItemPool(): Item[] {
     const items: Item[] = [];
+    const categories: ItemCategory[] = ['espadas', 'ouro', 'copas', 'paus'];
+
     let itemId = 0;
 
-    const categories: ItemCategory[] = ['espadas', 'ouro', 'copas', 'paus'];
-    const rarities: ItemRarity[] = ['comum', 'raro', 'épico', 'lendário'];
-
     categories.forEach((category) => {
-      const itemsInCategory = this.itemPoolConfig.categoriesDistribution[category];
+      for (let value = 1; value <= 13; value++) {
+        const rule = this.getCardRule(value);
 
-      for (let i = 0; i < itemsInCategory; i++) {
-        const value = (i % 12) + 1;
-        const rarity = rarities[Math.floor((itemId * 2.7) % rarities.length)];
+        const rarity: ItemRarity =
+          value === 1 || value === 13
+            ? 'lendário'
+            : value >= 10
+              ? 'épico'
+              : value >= 7
+                ? 'raro'
+                : 'comum';
 
         items.push({
-          id: `item_${itemId}`,
-          name: `${category.charAt(0).toUpperCase() + category.slice(1)} ${value}`,
+          id: `card_${category}_${value}_${itemId}`,
+          name: this.getDisplayName(category, value),
           category,
           value,
           rarity,
           isTrump: false,
+          ruleTitle: rule.title,
+          ruleDescription: rule.description,
+          actionType: rule.actionType,
         });
 
         itemId++;
@@ -123,8 +239,8 @@ export class GameManager {
     const shuffled = [...array];
 
     for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor((i * 9301 + 49297) % 233280) % (i + 1);
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      const random = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[random]] = [shuffled[random], shuffled[i]];
     }
 
     return shuffled;
@@ -138,6 +254,9 @@ export class GameManager {
       value: item.value,
       rarity: item.rarity,
       isTrump: Boolean(item.isTrump),
+      ruleTitle: item.ruleTitle || '',
+      ruleDescription: item.ruleDescription || '',
+      actionType: item.actionType || 'drink',
     };
   }
 
@@ -155,31 +274,19 @@ export class GameManager {
   }
 
   private serializeTurn(turn: any) {
-    const playedCards: Record<string, any> = {};
+    if (!turn) return null;
 
-    if (turn?.playedCards instanceof Map) {
-      turn.playedCards.forEach((card: Item, playerId: string) => {
-        playedCards[playerId] = this.serializeItem(card);
-      });
-    }
-
-    const data: any = {
+    return {
       roundNumber: turn.roundNumber,
       turnNumber: turn.turnNumber,
       leaderId: turn.leaderId,
-      playedCards,
+      currentPlayerId: turn.currentPlayerId,
+      drawnCard: turn.drawnCard ? this.serializeItem(turn.drawnCard) : null,
+      keptCard: turn.keptCard ? this.serializeItem(turn.keptCard) : null,
+      playedCard: turn.playedCard ? this.serializeItem(turn.playedCard) : null,
+      actionTaken: turn.actionTaken || 'skipped',
       timestamp: turn.timestamp || new Date(),
     };
-
-    if (turn.trumpCategory) {
-      data.trumpCategory = turn.trumpCategory;
-    }
-
-    if (turn.winnerPlayerId) {
-      data.winnerPlayerId = turn.winnerPlayerId;
-    }
-
-    return data;
   }
 
   private getSerializableGameState() {
@@ -193,12 +300,9 @@ export class GameManager {
         currentPlayers: this.gameState.roomConfig.currentPlayers,
         status: this.gameState.roomConfig.status,
         createdAt: this.gameState.roomConfig.createdAt || new Date(),
-        ...(this.gameState.roomConfig.startedAt
-          ? { startedAt: this.gameState.roomConfig.startedAt }
-          : {}),
-        ...(this.gameState.roomConfig.endedAt
-          ? { endedAt: this.gameState.roomConfig.endedAt }
-          : {}),
+        startedAt: this.gameState.roomConfig.startedAt || null,
+        endedAt: this.gameState.roomConfig.endedAt || null,
+        gameMode: this.gameState.roomConfig.gameMode || 'normal',
       },
       players: Array.from(this.gameState.players.values()).map((player) =>
         this.serializePlayer(player)
@@ -212,162 +316,292 @@ export class GameManager {
         })
       ),
       itemPool: this.gameState.itemPool.map((item) => this.serializeItem(item)),
-      currentTurn: this.gameState.currentTurn
-        ? this.serializeTurn(this.gameState.currentTurn)
-        : null,
+      discardPile: this.gameState.discardPile.map((item) => this.serializeItem(item)),
+      currentTurn: this.serializeTurn(this.gameState.currentTurn),
       turns: this.gameState.turns.map((turn) => this.serializeTurn(turn)),
       round: this.gameState.round,
       gameHistory: this.gameState.gameHistory || [],
+      gameLog: this.gameState.gameLog || [],
       status: this.gameState.status,
       rankings: this.gameState.rankings || [],
+      kingCupCount: this.gameState.kingCupCount || 0,
     };
   }
 
-  distributeInitialCards(): void {
-    const itemsPerPlayer = 10;
-
-    Array.from(this.gameState.players.keys()).forEach((playerId) => {
-      const playerItems = this.gameState.itemPool.splice(0, itemsPerPlayer);
-
-      this.gameState.playerHands.set(playerId, {
-        playerId,
-        items: playerItems,
-        isLeader: false,
-        score: 0,
-      });
-    });
-
-    this.emit('card_distributed', {
-      totalPlayers: this.gameState.players.size,
-      itemsPerPlayer,
-      itemsRemainingInPool: this.gameState.itemPool.length,
+  private getPlayerOrder(): string[] {
+    return Array.from(this.gameState.players.keys()).filter((playerId) => {
+      const player = this.gameState.players.get(playerId);
+      return player?.isActive;
     });
   }
 
-  joinMidGame(player: Player): void {
-    if (
-      this.gameState.roomConfig.currentPlayers >= this.gameState.roomConfig.maxPlayers
-    ) {
-      throw new Error('Sala cheia. Não é possível entrar.');
+  private getNextPlayerId(currentPlayerId: string): string {
+    const players = this.getPlayerOrder();
+
+    if (players.length === 0) {
+      return currentPlayerId;
     }
 
-    if (
-      this.gameState.players.get(player.id) &&
-      this.gameState.players.get(player.id)!.isActive
-    ) {
-      throw new Error('Jogador já está na sala.');
+    const currentIndex = players.indexOf(currentPlayerId);
+    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % players.length;
+
+    return players[nextIndex];
+  }
+
+  private addGameLog(playerId: string, action: string, description: string, card?: Item | null) {
+    const player = this.gameState.players.get(playerId);
+
+    this.gameState.gameLog.unshift({
+      id: `log_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      playerId,
+      playerName: player?.name || 'Jogador',
+      card: card || null,
+      action,
+      description,
+      createdAt: new Date(),
+    });
+
+    this.gameState.gameLog = this.gameState.gameLog.slice(0, 30);
+  }
+
+  private ensurePlayerHand(playerId: string) {
+    if (!this.gameState.playerHands.has(playerId)) {
+      this.gameState.playerHands.set(playerId, {
+        playerId,
+        items: [],
+        isLeader: false,
+        score: 0,
+      });
+    }
+
+    return this.gameState.playerHands.get(playerId)!;
+  }
+
+  addPlayer(player: Player): void {
+    if (this.gameState.players.has(player.id)) {
+      return;
+    }
+
+    if (this.gameState.players.size >= this.gameState.roomConfig.maxPlayers) {
+      throw new Error('Sala cheia.');
     }
 
     this.gameState.players.set(player.id, {
       ...player,
       joinedAt: new Date(),
       isActive: true,
-      isMidGameJoin: true,
     });
 
-    const itemsPerPlayer = 5;
-    const playerItems = this.gameState.itemPool.splice(
-      0,
-      Math.min(itemsPerPlayer, this.gameState.itemPool.length)
-    );
-
-    this.gameState.playerHands.set(player.id, {
-      playerId: player.id,
-      items: playerItems,
-      isLeader: false,
-      score: 0,
-    });
-
+    this.ensurePlayerHand(player.id);
     this.gameState.roomConfig.currentPlayers++;
 
-    this.emit('mid_game_join', {
+    this.emit('player_joined', {
       playerId: player.id,
       playerName: player.name,
-      itemsReceived: playerItems.length,
-      itemsRemainingInPool: this.gameState.itemPool.length,
+      totalPlayers: this.gameState.players.size,
+    });
+  }
+  private addJokersForPlayers(): void {
+    const playerCount = this.gameState.players.size;
+
+    for (let i = 0; i < playerCount; i++) {
+      this.gameState.itemPool.push({
+        id: `joker_${this.roomId}_${i}_${Date.now()}`,
+        name: 'Coringa',
+        category: 'coringa',
+        value: 0,
+        rarity: 'lendário',
+        isTrump: false,
+        ruleTitle: 'Coringa',
+        ruleDescription:
+          'Guarde esta carta. No fim da rodada, use para adicionar +1 dose ao jogador mais votado.',
+        actionType: 'joker',
+      });
+    }
+
+    this.gameState.itemPool = this.shuffleArray(this.gameState.itemPool);
+  }
+
+  startGame(): void {
+    if (this.gameState.players.size < 2) {
+      throw new Error('É necessário no mínimo 2 jogadores para começar.');
+    }
+
+    this.gameState.status = 'active';
+    this.gameState.roomConfig.status = 'playing';
+    this.gameState.roomConfig.startedAt = new Date();
+    this.gameState.round = 1;
+    this.addJokersForPlayers();
+    Array.from(this.gameState.players.keys()).forEach((playerId) => {
+      this.ensurePlayerHand(playerId);
+    });
+
+    const firstPlayerId = Array.from(this.gameState.players.keys())[0];
+    this.startTurn(firstPlayerId);
+
+    FirestoreManager.startGame(this.roomId, this.getSerializableGameState() as any).catch(
+      (error) => {
+        console.error('Erro ao iniciar jogo no Firestore:', error);
+      }
+    );
+
+    this.emit('game_finished', {
+      status: 'started',
+      totalPlayers: this.gameState.players.size,
     });
   }
 
-  validateCardPlay(playerId: string, cardId: string): ValidationResult {
-    const hand = this.gameState.playerHands.get(playerId);
+  startTurn(playerId: string): void {
+    this.gameState.currentTurn = {
+      roundNumber: this.gameState.round,
+      turnNumber: this.gameState.turns.length + 1,
+      leaderId: playerId,
+      currentPlayerId: playerId,
+      drawnCard: null,
+      keptCard: null,
+      playedCard: null,
+      actionTaken: 'skipped',
+      timestamp: new Date(),
+    };
 
-    if (!hand) {
-      return { isValid: false, reason: 'Jogador não encontrado' };
-    }
-
-    const card = hand.items.find((item) => item.id === cardId);
-
-    if (!card) {
-      return {
-        isValid: false,
-        reason: 'Card não está na mão do jogador',
-      };
-    }
-
-    if (this.gameState.currentTurn.leaderId === playerId) {
-      return {
-        isValid: true,
-        canPlayTrump: false,
-        mustFollowCategory: false,
-      };
-    }
-
-    const trumpCategory = this.gameState.currentTurn.trumpCategory;
-
-    const hasCardOfCategory = hand.items.some(
-      (item) => item.category === trumpCategory
-    );
-
-    if (hasCardOfCategory && card.category !== trumpCategory) {
-      return {
-        isValid: false,
-        reason: `Você tem cards de ${trumpCategory}. Deve jogar dessa categoria.`,
-        mustFollowCategory: true,
-      };
-    }
-
-    if (!hasCardOfCategory && card.isTrump === false) {
-      const hasTrump = hand.items.some((item) => item.isTrump);
-
-      if (hasTrump) {
-        return {
-          isValid: false,
-          reason: 'Você tem trunfos. Deve jogar um trunfo ou da categoria.',
-          canPlayTrump: true,
-        };
-      }
-    }
-
-    return { isValid: true };
+    this.emit('turn_started', {
+      playerId,
+      roundNumber: this.gameState.round,
+      turnNumber: this.gameState.currentTurn.turnNumber,
+    });
   }
 
-  playCard(playerId: string, cardId: string): void {
-    const validation = this.validateCardPlay(playerId, cardId);
-
-    if (!validation.isValid) {
-      throw new Error(validation.reason);
+  drawCard(playerId: string): Item {
+    if (this.gameState.status !== 'active') {
+      throw new Error('O jogo ainda não está ativo.');
     }
 
-    const hand = this.gameState.playerHands.get(playerId);
-    const cardIndex = hand!.items.findIndex((item) => item.id === cardId);
-    const card = hand!.items.splice(cardIndex, 1)[0];
-
-    if (
-      this.gameState.currentTurn.leaderId === playerId &&
-      this.gameState.currentTurn.playedCards.size === 0
-    ) {
-      this.gameState.currentTurn.trumpCategory = card.category;
+    if (this.gameState.currentTurn.currentPlayerId !== playerId) {
+      throw new Error('Ainda não é sua vez.');
     }
 
-    this.gameState.currentTurn.playedCards.set(playerId, card);
+    if (this.gameState.currentTurn.drawnCard) {
+      throw new Error('Você já comprou uma carta neste turno.');
+    }
 
-    if (this.currentTurnId) {
-      FirestoreManager.playCard(this.roomId, this.currentTurnId, playerId, card).catch(
-        (error) => {
-          console.error('Erro ao registrar jogada no Firestore:', error);
-        }
+    const card = this.gameState.itemPool.shift();
+
+    if (!card) {
+      this.finishGame();
+      throw new Error('O baralho acabou. O jogo foi finalizado.');
+    }
+
+    this.gameState.currentTurn.drawnCard = card;
+    this.gameState.currentTurn.actionTaken = 'drawn';
+
+    this.syncStateToFirestore();
+
+    this.emit('card_drawn', {
+      playerId,
+      card,
+      cardsLeft: this.gameState.itemPool.length,
+    });
+
+    return card;
+  }
+
+  keepDrawnCard(playerId: string): void {
+    const turn = this.gameState.currentTurn;
+
+    if (turn.currentPlayerId !== playerId) {
+      throw new Error('Ainda não é sua vez.');
+    }
+
+    if (!turn.drawnCard) {
+      throw new Error('Compre uma carta primeiro.');
+    }
+
+    const hand = this.ensurePlayerHand(playerId);
+    const drawnCard = turn.drawnCard;
+    const hasSavedCard = hand.items.length >= 1;
+    const isBathroomCard = drawnCard.value === 10;
+
+    if (hasSavedCard && !isBathroomCard) {
+      throw new Error(
+        'Você só pode guardar uma carta. Use a carta comprada agora ou use sua carta guardada antes.'
       );
     }
+
+    if (hasSavedCard && isBathroomCard) {
+      const oldCard = hand.items.shift();
+
+      if (oldCard) {
+        this.gameState.discardPile.push(oldCard);
+      }
+
+      hand.items.push(drawnCard);
+    } else {
+      hand.items.push(drawnCard);
+    }
+
+    turn.keptCard = drawnCard;
+    turn.actionTaken = 'kept';
+
+    this.finishCurrentTurn();
+  }
+
+  playDrawnCard(playerId: string): void {
+    const turn = this.gameState.currentTurn;
+
+    if (turn.currentPlayerId !== playerId) {
+      throw new Error('Ainda não é sua vez.');
+    }
+
+    if (!turn.drawnCard) {
+      throw new Error('Compre uma carta primeiro.');
+    }
+
+    const rule = this.getRuleFromCard(turn.drawnCard);
+
+    turn.drawnCard.ruleTitle = rule.title;
+    turn.drawnCard.ruleDescription = rule.description;
+
+    turn.playedCard = turn.drawnCard;
+    turn.actionTaken = 'played';
+
+    this.applyCardEffect(playerId, turn.drawnCard);
+    this.gameState.discardPile.push(turn.drawnCard);
+
+    this.addGameLog(
+      playerId,
+      'Carta usada',
+      `${this.gameState.players.get(playerId)?.name || 'Jogador'} usou ${turn.drawnCard.name}: ${rule.title} — ${rule.description}`,
+      turn.drawnCard
+    );
+
+    this.finishCurrentTurn();
+  }
+  
+  playSavedCard(playerId: string, cardId: string): void {
+    const hand = this.ensurePlayerHand(playerId);
+    const cardIndex = hand.items.findIndex((item) => item.id === cardId);
+
+    if (cardIndex < 0) {
+      throw new Error('Carta não encontrada na sua mão.');
+    }
+
+    const card = hand.items.splice(cardIndex, 1)[0];
+    const rule = this.getRuleFromCard(card);
+
+    card.ruleTitle = rule.title;
+    card.ruleDescription = rule.description;
+
+    this.applyCardEffect(playerId, card);
+    this.gameState.discardPile.push(card);
+
+    this.addGameLog(
+      playerId,
+      'Carta guardada usada',
+      `${this.gameState.players.get(playerId)?.name || 'Jogador'} usou a carta guardada ${card.name}: ${rule.title} — ${rule.description}`,
+      card
+    );
+
+    this.syncStateToFirestore();
 
     this.emit('card_played', {
       playerId,
@@ -377,100 +611,136 @@ export class GameManager {
     });
   }
 
-  startTurn(leaderId: string, trumpCategory?: ItemCategory): void {
-    this.gameState.currentTurn = {
-      roundNumber: this.gameState.round,
-      turnNumber: this.gameState.turns.length + 1,
-      leaderId,
-      trumpCategory,
-      playedCards: new Map(),
-      timestamp: new Date(),
-    };
+  tradeBathroomCard(playerId: string): void {
+    const turn = this.gameState.currentTurn;
 
-    this.currentTurnId = `turn_${this.gameState.round}_${Date.now()}`;
+    if (turn.currentPlayerId !== playerId) {
+      throw new Error('Ainda não é sua vez.');
+    }
 
-    FirestoreManager.createTurn(this.roomId, this.gameState.currentTurn).catch(
+    if (!turn.drawnCard || turn.drawnCard.value !== 10) {
+      throw new Error('Apenas a carta Banheiro pode ser negociada nesta ação.');
+    }
+
+    const hand = this.ensurePlayerHand(playerId);
+
+    if (hand.items.length >= 1) {
+      const oldCard = hand.items.shift();
+
+      if (oldCard) {
+        this.gameState.discardPile.push(oldCard);
+      }
+    }
+
+    hand.items.push(turn.drawnCard);
+
+    turn.keptCard = turn.drawnCard;
+    turn.actionTaken = 'kept';
+
+    this.addGameLog(
+      playerId,
+      'Banheiro negociado',
+      `${this.gameState.players.get(playerId)?.name || 'Jogador'} guardou/negociou a carta Banheiro.`,
+      turn.drawnCard
+    );
+
+    this.finishCurrentTurn();
+  }
+
+  private isBonusDrinkCard(card: Item): boolean {
+    return ['drink', 'king_cup'].includes(card.actionType || '');
+  }
+
+  private applyCardEffect(playerId: string, card: Item): void {
+    if (card.value === 13) {
+      this.gameState.kingCupCount += 1;
+
+      if (this.gameState.kingCupCount >= 4) {
+        this.addGameLog(
+          playerId,
+          'Rei do Copo',
+          'Saiu o 4º Rei. O jogador deve virar o copo central.',
+          card
+        );
+      } else {
+        this.addGameLog(
+          playerId,
+          'Rei do Copo',
+          `Rei ${this.gameState.kingCupCount}/4. O jogador coloca bebida no copo central.`,
+          card
+        );
+      }
+    }
+  }
+  private finishCurrentTurn(): void {
+    const finishedTurn = this.gameState.currentTurn;
+
+    this.gameState.turns.push(finishedTurn);
+    this.gameState.gameHistory.push(finishedTurn);
+
+    const players = this.getPlayerOrder();
+    const nextPlayerId = this.getNextPlayerId(finishedTurn.currentPlayerId);
+
+    const finishedFullRound = nextPlayerId === players[0];
+
+    if (finishedFullRound) {
+      this.resetRoundTradeOptions();
+
+      if (this.gameState.roomConfig.gameMode === 'bonus') {
+        this.startRoundVote();
+        this.syncStateToFirestore();
+
+        this.emit('round_ended', {
+          round: this.gameState.round,
+          voteStarted: true,
+        });
+
+        return;
+      }
+
+      this.gameState.round += 1;
+    }
+
+    this.startTurn(nextPlayerId);
+    this.syncStateToFirestore();
+
+    this.emit('turn_ended', {
+      nextPlayerId,
+      round: this.gameState.round,
+    });
+  }
+  private resetRoundTradeOptions(): void {
+    const reset: Record<string, boolean> = {};
+
+    this.gameState.players.forEach((_player, playerId) => {
+      reset[playerId] = false;
+    });
+
+    this.gameState.tradeLockedPlayers = reset;
+  }
+
+  private syncStateToFirestore(): void {
+    FirestoreManager.updateGameState(this.roomId, this.getSerializableGameState() as any).catch(
       (error) => {
-        console.error('Erro ao criar turno no Firestore:', error);
+        console.error('Erro ao sincronizar estado do jogo:', error);
+      }
+    );
+  }
+
+  finishGame(): void {
+    this.gameState.status = 'finished';
+    this.gameState.roomConfig.status = 'finished';
+    this.gameState.roomConfig.endedAt = new Date();
+
+    FirestoreManager.finishGame(this.roomId, Array.from(this.gameState.players.values())).catch(
+      (error) => {
+        console.error('Erro ao finalizar jogo:', error);
       }
     );
 
-    this.emit('turn_started', {
-      leaderId,
-      roundNumber: this.gameState.round,
+    this.emit('game_finished', {
+      status: 'ended',
     });
-  }
-
-  endTurn(): string {
-    let winnerPlayerId = this.gameState.currentTurn.leaderId;
-    let winningCard = this.gameState.currentTurn.playedCards.get(winnerPlayerId);
-
-    if (!winningCard) {
-      throw new Error('Nenhum card foi jogado');
-    }
-
-    this.gameState.currentTurn.playedCards.forEach((card, playerId) => {
-      if (playerId === this.gameState.currentTurn.leaderId) return;
-
-      if (!winningCard) return;
-
-      if (card.isTrump && !winningCard.isTrump) {
-        winnerPlayerId = playerId;
-        winningCard = card;
-      } else if (
-        card.category === winningCard.category &&
-        card.value > winningCard.value
-      ) {
-        winnerPlayerId = playerId;
-        winningCard = card;
-      }
-    });
-
-    const winnerHand = this.gameState.playerHands.get(winnerPlayerId);
-
-    if (winnerHand) {
-      winnerHand.score += this.calculateRoundScore(
-        this.gameState.currentTurn.playedCards
-      );
-    }
-
-    this.gameState.currentTurn.winnerPlayerId = winnerPlayerId;
-    this.gameState.turns.push(this.gameState.currentTurn);
-
-    const scores = new Map<string, number>();
-
-    this.gameState.playerHands.forEach((hand, playerId) => {
-      scores.set(playerId, hand.score);
-    });
-
-    if (this.currentTurnId) {
-      FirestoreManager.endTurn(
-        this.roomId,
-        this.currentTurnId,
-        winnerPlayerId,
-        scores
-      ).catch((error) => {
-        console.error('Erro ao finalizar turno no Firestore:', error);
-      });
-    }
-
-    this.emit('turn_ended', {
-      winnerId: winnerPlayerId,
-      winningCard: winningCard.name,
-      newScore: winnerHand?.score,
-    });
-
-    return winnerPlayerId;
-  }
-
-  private calculateRoundScore(playedCards: Map<string, Item>): number {
-    let score = 0;
-
-    playedCards.forEach((card) => {
-      score += card.value;
-    });
-
-    return score;
   }
 
   getGameState(): GameState {
@@ -493,30 +763,6 @@ export class GameManager {
     return this.gameState.roomConfig;
   }
 
-  addPlayer(player: Player): void {
-    if (this.gameState.players.has(player.id)) {
-      return;
-    }
-
-    if (this.gameState.players.size >= this.gameState.roomConfig.maxPlayers) {
-      throw new Error('Sala cheia.');
-    }
-
-    this.gameState.players.set(player.id, {
-      ...player,
-      joinedAt: new Date(),
-      isActive: true,
-    });
-
-    this.gameState.roomConfig.currentPlayers++;
-
-    this.emit('player_joined', {
-      playerId: player.id,
-      playerName: player.name,
-      totalPlayers: this.gameState.players.size,
-    });
-  }
-
   removePlayer(playerId: string): void {
     const player = this.gameState.players.get(playerId);
 
@@ -530,54 +776,6 @@ export class GameManager {
         remainingPlayers: this.gameState.roomConfig.currentPlayers,
       });
     }
-  }
-
-  startGame(): void {
-    if (this.gameState.players.size < 2) {
-      throw new Error('É necessário no mínimo 2 jogadores para começar.');
-    }
-
-    this.gameState.status = 'active';
-    this.gameState.roomConfig.status = 'playing';
-    this.gameState.roomConfig.startedAt = new Date();
-    this.gameState.round = 1;
-
-    this.distributeInitialCards();
-
-    const firstPlayerId = Array.from(this.gameState.players.keys())[0];
-    this.startTurn(firstPlayerId);
-
-    FirestoreManager.startGame(this.roomId, this.getSerializableGameState() as any).catch(
-      (error) => {
-        console.error('Erro ao iniciar jogo no Firestore:', error);
-      }
-    );
-
-    this.emit('game_finished', {
-      status: 'started',
-      totalPlayers: this.gameState.players.size,
-    });
-  }
-
-  finishGame(): void {
-    this.gameState.status = 'finished';
-    this.gameState.roomConfig.status = 'finished';
-    this.gameState.roomConfig.endedAt = new Date();
-
-    const rankings = Array.from(this.gameState.playerHands.values())
-      .sort((a, b) => b.score - a.score)
-      .map((hand, index) => ({
-        playerId: hand.playerId,
-        finalScore: hand.score,
-        position: index + 1,
-      }));
-
-    this.gameState.rankings = rankings;
-
-    this.emit('game_finished', {
-      status: 'ended',
-      rankings,
-    });
   }
 
   on(eventType: GameEventType, handler: Function): void {
@@ -602,5 +800,189 @@ export class GameManager {
         console.error(`Error in event handler for ${eventType}:`, error);
       }
     });
+  }
+  private getRuleFromCard(card: Item) {
+    if (card.ruleTitle && card.ruleDescription) {
+      return {
+        title: card.ruleTitle,
+        description: card.ruleDescription,
+      };
+    }
+
+    const rule = this.getCardRule(card.value);
+
+    return {
+      title: rule.title,
+      description: rule.description,
+    };
+  }
+
+  private startRoundVote(): void {
+    const now = new Date();
+    const endsAt = new Date(now.getTime() + 45 * 1000);
+
+    this.gameState.status = 'round_vote';
+
+    this.gameState.roundVote = {
+      active: true,
+      roundNumber: this.gameState.round,
+      startedAt: now,
+      endsAt,
+      votes: {},
+      jokerUsers: [],
+    };
+
+    this.addGameLog(
+      'system',
+      'Votação bônus',
+      `Fim da rodada ${this.gameState.round}. Votação secreta iniciada por 45 segundos.`,
+      null
+    );
+  }
+
+  voteForPlayer(voterId: string, targetPlayerId: string): void {
+    if (this.gameState.status !== 'round_vote' || !this.gameState.roundVote?.active) {
+      throw new Error('A votação não está ativa.');
+    }
+
+    if (!this.gameState.players.has(voterId)) {
+      throw new Error('Jogador inválido.');
+    }
+
+    if (!this.gameState.players.has(targetPlayerId)) {
+      throw new Error('Alvo inválido.');
+    }
+
+    this.gameState.roundVote.votes[voterId] = targetPlayerId;
+    this.syncStateToFirestore();
+  }
+
+  useJokerInRoundVote(playerId: string): void {
+    if (this.gameState.status !== 'round_vote' || !this.gameState.roundVote?.active) {
+      throw new Error('A votação não está ativa.');
+    }
+
+    if (this.gameState.roundVote.jokerUsers.includes(playerId)) {
+      throw new Error('Você já usou um coringa nesta votação.');
+    }
+
+    const hand = this.ensurePlayerHand(playerId);
+    const jokerIndex = hand.items.findIndex((item) => item.actionType === 'joker');
+
+    if (jokerIndex < 0) {
+      throw new Error('Você não tem coringa guardado.');
+    }
+
+    const joker = hand.items.splice(jokerIndex, 1)[0];
+    this.gameState.discardPile.push(joker);
+    this.gameState.roundVote.jokerUsers.push(playerId);
+
+    this.syncStateToFirestore();
+  }
+
+  finishRoundVote(): void {
+    const vote = this.gameState.roundVote;
+
+    if (!vote?.active) {
+      throw new Error('Nenhuma votação ativa.');
+    }
+
+    const counts: Record<string, number> = {};
+
+    Object.values(vote.votes).forEach((targetPlayerId) => {
+      counts[targetPlayerId] = (counts[targetPlayerId] || 0) + 1;
+    });
+
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const [targetPlayerId, voteCount] = sorted[0] || [];
+
+    if (!targetPlayerId) {
+      this.addGameLog(
+        'system',
+        'Votação encerrada',
+        'Ninguém votou. A rodada terminou sem dose bônus.',
+        null
+      );
+    } else {
+      const targetPlayer = this.gameState.players.get(targetPlayerId);
+      const extraDoses = vote.jokerUsers.length;
+      const totalDoses = 1 + extraDoses;
+
+      vote.result = {
+        targetPlayerId,
+        targetPlayerName: targetPlayer?.name || 'Jogador',
+        votes: voteCount,
+        extraDoses,
+        totalDoses,
+      };
+
+      this.addGameLog(
+        'system',
+        'Resultado da votação',
+        `${targetPlayer?.name || 'Jogador'} foi o mais votado e bebe ${totalDoses} dose(s). ${extraDoses > 0 ? `+${extraDoses} por coringa.` : ''}`,
+        null
+      );
+    }
+
+    vote.active = false;
+    this.gameState.status = 'active';
+    this.gameState.round += 1;
+
+    const firstPlayerId = this.getPlayerOrder()[0];
+    this.startTurn(firstPlayerId);
+
+    this.syncStateToFirestore();
+  }
+  kickPlayerByHost(hostId: string, targetPlayerId: string): void {
+    if (this.gameState.roomConfig.hostId !== hostId) {
+      throw new Error('Apenas o host pode banir jogadores.');
+    }
+
+    if (hostId === targetPlayerId) {
+      throw new Error('O host não pode banir a si mesmo.');
+    }
+
+    const player = this.gameState.players.get(targetPlayerId);
+
+    if (!player) {
+      throw new Error('Jogador não encontrado.');
+    }
+
+    player.isActive = false;
+    this.gameState.players.delete(targetPlayerId);
+    this.gameState.playerHands.delete(targetPlayerId);
+    this.gameState.roomConfig.currentPlayers = this.gameState.players.size;
+
+    this.addGameLog(
+      'system',
+      'Jogador removido',
+      `${player.name} foi removido da partida pelo host.`,
+      null
+    );
+
+    this.syncStateToFirestore();
+  }
+
+  transferHost(currentHostId: string, newHostId: string): void {
+    if (this.gameState.roomConfig.hostId !== currentHostId) {
+      throw new Error('Apenas o host atual pode transferir o host.');
+    }
+
+    if (!this.gameState.players.has(newHostId)) {
+      throw new Error('Novo host inválido.');
+    }
+
+    this.gameState.roomConfig.hostId = newHostId;
+
+    const newHost = this.gameState.players.get(newHostId);
+
+    this.addGameLog(
+      'system',
+      'Host alterado',
+      `${newHost?.name || 'Jogador'} agora é o host da partida.`,
+      null
+    );
+
+    this.syncStateToFirestore();
   }
 }

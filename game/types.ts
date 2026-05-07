@@ -1,19 +1,50 @@
 /**
- * Tipos e Interfaces para o Game Engine
- * Sistema de Jogo de Turnos com Pool Dinâmico de Itens
+ * Tipos do Fest Haus Game
+ * Jogo estilo copo central / baralho no meio.
  */
 
-// ============== ITEM/CARD TYPES ==============
-export type ItemCategory = 'espadas' | 'ouro' | 'copas' | 'paus';
 export type ItemRarity = 'comum' | 'raro' | 'épico' | 'lendário';
+
+export type GameMode = 'normal' | 'bonus';
+
+export type ItemCategory = 'espadas' | 'ouro' | 'copas' | 'paus' | 'coringa';
+
+export interface RoundVoteState {
+  active: boolean;
+  roundNumber: number;
+  startedAt: Date;
+  endsAt: Date;
+  votes: Record<string, string>; // playerId -> targetPlayerId
+  jokerUsers: string[]; // quem usou coringa
+  result?: {
+    targetPlayerId: string;
+    targetPlayerName: string;
+    votes: number;
+    extraDoses: number;
+    totalDoses: number;
+  };
+}
+
+export type CardActionType =
+  | 'drink'
+  | 'table_finger'
+  | 'mini_game'
+  | 'rule'
+  | 'bathroom'
+  | 'king_cup'
+  | 'joker';
 
 export interface Item {
   id: string;
   name: string;
   category: ItemCategory;
-  value: number; // 1-12, peso/poder do item
+  value: number;
   rarity: ItemRarity;
-  isTrump?: boolean; // Se é um trunfo
+  isTrump?: boolean;
+
+  ruleTitle?: string;
+  ruleDescription?: string;
+  actionType?: CardActionType;
 }
 
 export interface PlayerHand {
@@ -24,7 +55,6 @@ export interface PlayerHand {
   score: number;
 }
 
-// ============== ROOM TYPES ==============
 export type RoomType = 'waiting_room' | 'direct_invite';
 
 export interface RoomConfig {
@@ -38,13 +68,13 @@ export interface RoomConfig {
   startedAt?: Date;
   endedAt?: Date;
   whatsappInviteLink?: string;
+  gameMode?: GameMode;
 }
 
-// ============== PLAYER TYPES ==============
 export interface Player {
   id: string;
   name: string;
-  phone: string; // Para WhatsApp integration
+  phone: string;
   email?: string;
   profileImage?: string;
   joinedAt: Date;
@@ -52,46 +82,58 @@ export interface Player {
   isMidGameJoin?: boolean;
 }
 
-// ============== TURN TYPES ==============
 export interface Turn {
   roundNumber: number;
   turnNumber: number;
   leaderId: string;
-  trumpCategory?: ItemCategory;
-  trumpLeaderId?: string;
-  playedCards: Map<string, Item>; // playerId -> item jogado
-  winnerPlayerId?: string;
+  currentPlayerId: string;
+  drawnCard?: Item | null;
+  keptCard?: Item | null;
+  playedCard?: Item | null;
+  actionTaken?: 'drawn' | 'kept' | 'played' | 'skipped';
   timestamp: Date;
 }
 
-// ============== GAME STATE ==============
+export interface GameLogEntry {
+  id: string;
+  playerId: string;
+  playerName: string;
+  card?: Item | null;
+  action: string;
+  description: string;
+  createdAt: Date;
+}
+
 export interface GameState {
   roomId: string;
   roomConfig: RoomConfig;
   players: Map<string, Player>;
   playerHands: Map<string, PlayerHand>;
   itemPool: Item[];
+  discardPile: Item[];
   currentTurn: Turn;
   turns: Turn[];
   round: number;
   gameHistory: Turn[];
-  status: 'waiting' | 'active' | 'paused' | 'finished';
-  rankings: {
+  gameLog: GameLogEntry[];
+  status: 'waiting' | 'active' | 'round_vote' | 'paused' | 'finished';
+  rankings: Array<{
     playerId: string;
     finalScore: number;
     position: number;
-  }[];
+  }>;
+  kingCupCount: number;
+  roundVote?: RoundVoteState;
+  tradeLockedPlayers: Record<string, boolean>;
 }
 
-// ============== ITEM POOL CONFIG ==============
 export interface ItemPoolConfig {
   maxPlayers: number;
-  totalItems: number; // Variável baseado em maxPlayers
-  categoriesDistribution: Record<ItemCategory, number>;
+  totalItems: number;
+  categoriesDistribution: Partial<Record<ItemCategory, number>>;
   rarityDistribution: Record<ItemRarity, number>;
 }
 
-// ============== VALIDATION RESULT ==============
 export interface ValidationResult {
   isValid: boolean;
   reason?: string;
@@ -99,13 +141,13 @@ export interface ValidationResult {
   mustFollowCategory?: boolean;
 }
 
-// ============== GAME EVENTS ==============
 export type GameEventType =
   | 'player_joined'
   | 'player_left'
   | 'turn_started'
+  | 'card_drawn'
+  | 'card_kept'
   | 'card_played'
-  | 'card_distributed'
   | 'turn_ended'
   | 'round_ended'
   | 'game_finished'
@@ -118,7 +160,6 @@ export interface GameEvent {
   data: any;
 }
 
-// ============== WHATSAPP INVITE ==============
 export interface WhatsAppInvite {
   roomId: string;
   hostName: string;
