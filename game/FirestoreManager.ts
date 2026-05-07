@@ -5,8 +5,6 @@
 
 import {
   Timestamp,
-  arrayRemove,
-  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -293,8 +291,16 @@ export class FirestoreManager {
 
       await setDoc(playerRef, playerData, { merge: true });
 
+      const latestRoomSnap = await getDoc(roomRef);
+      const latestRoomData = latestRoomSnap.data() as FirestoreRoomData | undefined;
+      const latestPlayers = Array.isArray(latestRoomData?.players)
+        ? latestRoomData.players
+        : [];
+
       await updateDoc(roomRef, {
-        players: arrayUnion(player.id),
+        players: latestPlayers.includes(player.id)
+          ? latestPlayers
+          : [...latestPlayers, player.id],
       });
 
       console.log('✅ Host sincronizado como player:', player.name);
@@ -340,8 +346,16 @@ export class FirestoreManager {
 
       await setDoc(playerRef, playerData, { merge: true });
 
+      const latestRoomSnap = await getDoc(roomRef);
+      const latestRoomData = latestRoomSnap.data() as FirestoreRoomData | undefined;
+      const latestPlayers = Array.isArray(latestRoomData?.players)
+        ? latestRoomData.players
+        : [];
+
       await updateDoc(roomRef, {
-        players: arrayUnion(player.id),
+        players: latestPlayers.includes(player.id)
+          ? latestPlayers
+          : [...latestPlayers, player.id],
       });
 
       console.log('✅ Player entrou na sala:', player.name);
@@ -595,8 +609,13 @@ export class FirestoreManager {
       const roomRef = doc(this.db, 'rooms', roomId);
       const playerRef = doc(this.db, 'rooms', roomId, 'players', userId);
 
+      const roomData = await this.getRoom(roomId);
+      const updatedPlayers = Array.isArray(roomData?.players)
+        ? roomData.players.filter((id) => id !== userId)
+        : [];
+
       batch.update(roomRef, {
-        players: arrayRemove(userId),
+        players: updatedPlayers,
       });
 
       batch.delete(playerRef);

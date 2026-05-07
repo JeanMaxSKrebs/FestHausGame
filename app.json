@@ -14,24 +14,32 @@
       },
       "intentFilters": [
         {
-          "action": "android.intent.action.VIEW",
-          "data": {
-            "scheme": "https",
-            "host": "*.festhausgame.app"
-          },
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "https",
+              "host": "festhausgame.app"
+            },
+            {
+              "scheme": "https",
+              "host": "www.festhausgame.app"
+            }
+          ],
           "category": [
-            "android.intent.category.DEFAULT",
-            "android.intent.category.BROWSABLE"
+            "BROWSABLE",
+            "DEFAULT"
           ]
         },
         {
-          "action": "android.intent.action.VIEW",
-          "data": {
-            "scheme": "festhausgame"
-          },
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "festhausgame"
+            }
+          ],
           "category": [
-            "android.intent.category.DEFAULT",
-            "android.intent.category.BROWSABLE"
+            "BROWSABLE",
+            "DEFAULT"
           ]
         }
       ],
@@ -62,7 +70,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": false
     },
     "extra": {
       "router": {},

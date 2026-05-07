@@ -2,8 +2,6 @@ import * as SecureStore from 'expo-secure-store';
 import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
-  User as FirebaseUser,
-  onAuthStateChanged,
   signInWithEmailAndPassword,
 } from 'firebase/auth';
 import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
@@ -47,12 +45,12 @@ interface AuthUserProviderProps {
   children: ReactNode;
 }
 
-function mapFirebaseUser(firebaseUser: FirebaseUser): AppUser {
+function mapFirebaseUser(firebaseUser: any): AppUser {
   return {
     uid: firebaseUser.uid,
     email: firebaseUser.email || '',
     nome: firebaseUser.displayName || firebaseUser.email || 'Jogador',
-    photoURL: firebaseUser.photoURL,
+    photoURL: firebaseUser.photoURL || null,
   };
 }
 
@@ -63,56 +61,62 @@ export const AuthUserProvider: React.FC<AuthUserProviderProps> = ({ children }) 
   useEffect(() => {
     console.log('✅ Auth Provider inicializado');
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      try {
-        setLoading(true);
-
-        if (!firebaseUser) {
-          setUser(null);
-          console.log('ℹ️ Nenhum usuário autenticado');
-          return;
-        }
-
-        const mappedUser = mapFirebaseUser(firebaseUser);
-
+    const unsubscribe = (auth as any).onAuthStateChanged(
+      async (firebaseUser: any) => {
         try {
-          const userDocRef = doc(db, 'users', firebaseUser.uid);
-          const userDocSnap = await getDoc(userDocRef);
+          setLoading(true);
 
-          if (userDocSnap.exists()) {
-            setUser({
-              ...mappedUser,
-              ...userDocSnap.data(),
-            });
-          } else {
-            await setDoc(
-              userDocRef,
-              {
-                nome: mappedUser.nome,
-                email: mappedUser.email,
-                photoURL: mappedUser.photoURL || null,
-                createdAt: new Date(),
-              },
-              { merge: true }
-            );
+          if (!firebaseUser) {
+            setUser(null);
+            console.log('ℹ️ Nenhum usuário autenticado');
+            return;
+          }
 
+          const mappedUser = mapFirebaseUser(firebaseUser);
+
+          try {
+            const userDocRef = doc(db, 'users', firebaseUser.uid);
+            const userDocSnap = await getDoc(userDocRef);
+
+            if (userDocSnap.exists()) {
+              setUser({
+                ...mappedUser,
+                ...userDocSnap.data(),
+              });
+            } else {
+              await setDoc(
+                userDocRef,
+                {
+                  nome: mappedUser.nome,
+                  email: mappedUser.email,
+                  photoURL: mappedUser.photoURL || null,
+                  createdAt: new Date(),
+                },
+                { merge: true }
+              );
+
+              setUser(mappedUser);
+            }
+          } catch (firestoreError) {
+            console.warn('⚠️ Erro ao carregar perfil do Firestore:', firestoreError);
             setUser(mappedUser);
           }
-        } catch (firestoreError) {
-          console.warn('⚠️ Erro ao carregar perfil do Firestore:', firestoreError);
-          setUser(mappedUser);
+
+          console.log('✅ Usuário autenticado no contexto:', mappedUser.email);
+        } catch (error) {
+          console.error('❌ Erro no onAuthStateChanged:', error);
+          setUser(null);
+        } finally {
+          setLoading(false);
         }
-
-        console.log('✅ Usuário autenticado no contexto:', mappedUser.email);
-      } catch (error) {
-        console.error('❌ Erro no onAuthStateChanged:', error);
-        setUser(null);
-      } finally {
-        setLoading(false);
       }
-    });
+    );
 
-    return () => unsubscribe();
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, []);
 
   const storeUserSession = async (email: string, senha: string): Promise<boolean> => {
@@ -136,14 +140,14 @@ export const AuthUserProvider: React.FC<AuthUserProviderProps> = ({ children }) 
     try {
       setLoading(true);
 
-      const credential = await signInWithEmailAndPassword(auth, email, senha);
+      const credential = await signInWithEmailAndPassword(auth as any, email, senha);
       await storeUserSession(email, senha);
 
       setUser({
         uid: credential.user.uid,
         email: credential.user.email || email,
         nome: credential.user.displayName || credential.user.email || email,
-        photoURL: credential.user.photoURL,
+        photoURL: credential.user.photoURL || null,
       });
 
       console.log('✅ Login realizado:', email);
@@ -159,7 +163,12 @@ export const AuthUserProvider: React.FC<AuthUserProviderProps> = ({ children }) 
     try {
       setLoading(true);
 
-      const userCredential = await createUserWithEmailAndPassword(auth, email, senha);
+      const userCredential = await createUserWithEmailAndPassword(
+        auth as any,
+        email,
+        senha
+      );
+
       const userFirebase = userCredential.user;
 
       await setDoc(
@@ -177,7 +186,7 @@ export const AuthUserProvider: React.FC<AuthUserProviderProps> = ({ children }) 
         uid: userFirebase.uid,
         email: userFirebase.email || email,
         nome,
-        photoURL: userFirebase.photoURL,
+        photoURL: userFirebase.photoURL || null,
       });
 
       console.log('✅ Usuário criado:', email);
@@ -192,7 +201,7 @@ export const AuthUserProvider: React.FC<AuthUserProviderProps> = ({ children }) 
 
   const getUserData = async (): Promise<void> => {
     try {
-      const currentUser = auth.currentUser;
+      const currentUser = (auth as any).currentUser;
 
       if (!currentUser) {
         setUser(null);
@@ -228,7 +237,7 @@ export const AuthUserProvider: React.FC<AuthUserProviderProps> = ({ children }) 
       setLoading(true);
 
       await SecureStore.deleteItemAsync('user_session');
-      await firebaseSignOut(auth);
+      await firebaseSignOut(auth as any);
 
       setUser(null);
       console.log('✅ Logout realizado');

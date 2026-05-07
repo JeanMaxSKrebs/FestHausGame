@@ -30,8 +30,8 @@ export function useFirestoreSync({
   onError,
 }: UseFirestoreSyncOptions) {
   const [isConnected, setIsConnected] = useState(false);
-  const unsubscribersRef = useRef<Array<() => void>>([]);
-
+  const unsubscribersRef = useRef<(() => void)[]>([]);
+  
   const onRoomUpdateRef = useRef(onRoomUpdate);
   const onPlayersUpdateRef = useRef(onPlayersUpdate);
   const onErrorRef = useRef(onError);

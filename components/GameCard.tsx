@@ -39,13 +39,18 @@ function getDisplayValue(value: number) {
         case 13:
             return 'K';
         default:
-            return value.toString();
+            return String(value);
     }
+}
+
+function isRedSuit(category: string) {
+    return category === 'copas' || category === 'ouro';
 }
 
 export function GameCard({ item, selected = false, onPress }: GameCardProps) {
     const suit = getSuit(item.category);
     const displayValue = getDisplayValue(item.value);
+    const suitColor = isRedSuit(item.category) ? '#B42318' : '#111827';
 
     return (
         <TouchableOpacity
@@ -53,9 +58,8 @@ export function GameCard({ item, selected = false, onPress }: GameCardProps) {
             onPress={onPress}
             activeOpacity={0.85}
         >
-            {/* 🔼 TOP LEFT */}
-            <View style={styles.corner}>
-                <Text style={styles.value}>{displayValue}</Text>
+            <View style={styles.topCorner}>
+                <Text style={[styles.value, { color: suitColor }]}>{displayValue}</Text>
                 <Text style={styles.smallNumber}>{item.value}</Text>
 
                 <Image
@@ -65,25 +69,24 @@ export function GameCard({ item, selected = false, onPress }: GameCardProps) {
                 />
             </View>
 
-            {/* 🔽 BOTTOM RIGHT (invertido) */}
-            <View style={[styles.corner, styles.bottomCorner]}>
-                <Image
-                    source={require('../assets/images/logo/logo.png')}
-                    style={styles.cornerLogo}
-                    resizeMode="contain"
-                />
-
-                <Text style={styles.smallNumber}>{item.value}</Text>
-                <Text style={styles.value}>{displayValue}</Text>
-            </View>
-
-            {/* 🧠 CENTRO */}
             <View style={styles.center}>
-                <Text style={styles.centerSuit}>{suit}</Text>
+                <Text style={[styles.centerSuit, { color: suitColor }]}>{suit}</Text>
+            </View>
+
+            <View style={styles.bottomCorner}>
+                <Image
+                    source={require('../assets/images/logo/logo.png')}
+                    style={styles.cornerLogo}
+                    resizeMode="contain"
+                />
+
+                <Text style={styles.smallNumber}>{item.value}</Text>
+                <Text style={[styles.value, { color: suitColor }]}>{displayValue}</Text>
             </View>
         </TouchableOpacity>
     );
 }
+
 const styles = StyleSheet.create({
     card: {
         width: 118,
@@ -95,63 +98,57 @@ const styles = StyleSheet.create({
         borderWidth: 2,
         borderColor: '#ddd',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
+        shadowOffset: {
+            width: 0,
+            height: 3,
+        },
         shadowOpacity: 0.16,
         shadowRadius: 5,
         elevation: 4,
     },
-
     cardSelected: {
         borderColor: '#007AFF',
         backgroundColor: '#E7F3FF',
         transform: [{ translateY: -4 }],
     },
-
-    /* 🔲 CANTOS */
-    corner: {
+    topCorner: {
         position: 'absolute',
         top: 8,
         left: 8,
         alignItems: 'center',
+        zIndex: 2,
     },
-
     bottomCorner: {
+        position: 'absolute',
         bottom: 8,
         right: 8,
-        top: undefined,
-        left: undefined,
+        alignItems: 'center',
         transform: [{ rotate: '180deg' }],
+        zIndex: 2,
     },
-
     value: {
         fontSize: 20,
         fontWeight: '900',
-        color: '#222',
         lineHeight: 20,
     },
-
     smallNumber: {
         fontSize: 12,
         color: '#777',
+        lineHeight: 13,
     },
-
     cornerLogo: {
         width: 22,
         height: 22,
         marginTop: 2,
         opacity: 0.9,
     },
-
-    /* 🎯 CENTRO */
     center: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
     },
-
     centerSuit: {
         fontSize: 56,
         fontWeight: '900',
-        color: '#222',
     },
 });

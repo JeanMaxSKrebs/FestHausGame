@@ -76,11 +76,11 @@ export interface GameState {
   round: number;
   gameHistory: Turn[];
   status: 'waiting' | 'active' | 'paused' | 'finished';
-  rankings: Array<{
+  rankings: {
     playerId: string;
     finalScore: number;
     position: number;
-  }>;
+  }[];
 }
 
 // ============== ITEM POOL CONFIG ==============

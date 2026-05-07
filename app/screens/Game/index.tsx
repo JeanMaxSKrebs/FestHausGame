@@ -146,7 +146,7 @@ const GameScreen = () => {
             name: getPlayerName(),
             phone: params.phone || '',
             email: user.email,
-            profileImage: user.photoURL,
+            profileImage: user.photoURL || undefined,
             joinedAt: new Date(),
             isActive: true,
           };
@@ -207,7 +207,7 @@ const GameScreen = () => {
             name: getPlayerName(),
             phone: '',
             email: user.email,
-            profileImage: user.photoURL,
+            profileImage: user.photoURL || undefined,
             joinedAt: new Date(),
             isActive: true,
           };
@@ -272,8 +272,12 @@ const GameScreen = () => {
     };
 
     initializeGame();
-  }, [params?.roomId, params?.createNew, isJoinMode, user?.uid, authLoading]);
 
+    // A inicialização da sala deve rodar apenas quando muda o modo/room/auth.
+    // As funções internas usam os valores atuais e initializedRef evita recriações.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params?.roomId, params?.createNew, isJoinMode, user?.uid, authLoading]);
+  
   const setupGameEventListeners = (manager: GameManager) => {
     manager.on('player_joined', () => {
       updateGameState(manager);
@@ -340,7 +344,7 @@ const GameScreen = () => {
     try {
       await WhatsAppBridge.copyLinkToClipboard(getInviteLink());
       Alert.alert('Copiado', 'Link da sala copiado para a área de transferência.');
-    } catch (error) {
+    } catch {
       Alert.alert('Erro', 'Não foi possível copiar o link.');
     }
   };

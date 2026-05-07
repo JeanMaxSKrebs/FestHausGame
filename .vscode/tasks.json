@@ -1,0 +1,95 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "1 - Metro Emulador 8081",
+            "type": "shell",
+            "command": "npx expo start --dev-client -c --port 8081",
+            "options": {
+                "cwd": "C:\\FestHausGame"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "new",
+                "group": "metros",
+                "reveal": "always",
+                "clear": true
+            }
+        },
+        {
+            "label": "2 - Metro Celular 8082",
+            "type": "shell",
+            "command": "npx expo start --dev-client -c --port 8082",
+            "options": {
+                "cwd": "C:\\FestHausGame"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "new",
+                "group": "metros",
+                "reveal": "always",
+                "clear": true
+            }
+        },
+        {
+            "label": "3 - Abrir Emulador 8081",
+            "type": "shell",
+            "command": "adb -s emulator-5554 reverse --remove-all; adb -s emulator-5554 reverse tcp:8081 tcp:8081; adb -s emulator-5554 shell am force-stop com.festhausgame; adb -s emulator-5554 shell am start -W -a android.intent.action.VIEW -d \"festhausgame://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081\"",
+            "options": {
+                "cwd": "C:\\FestHausGame"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "new",
+                "group": "abrir-apps",
+                "reveal": "always",
+                "clear": true
+            }
+        },
+        {
+            "label": "4 - Abrir Celular 8082",
+            "type": "shell",
+            "command": "adb -s SC8T5LBMVKWKWWP7 reverse --remove-all; adb -s SC8T5LBMVKWKWWP7 reverse tcp:8082 tcp:8082; adb -s SC8T5LBMVKWKWWP7 shell am force-stop com.festhausgame; adb -s SC8T5LBMVKWKWWP7 shell am start -W -a android.intent.action.VIEW -d \"festhausgame://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082\"",
+            "options": {
+                "cwd": "C:\\FestHausGame"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "new",
+                "group": "abrir-apps",
+                "reveal": "always",
+                "clear": true
+            }
+        },
+        {
+            "label": "5 - Logs Emulador",
+            "type": "shell",
+            "command": "adb -s emulator-5554 logcat | findstr /I \"ReactNativeJS ReactNative JavascriptException AndroidRuntime expo com.festhausgame 8081\"",
+            "options": {
+                "cwd": "C:\\FestHausGame"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "new",
+                "group": "logs",
+                "reveal": "always",
+                "clear": true
+            }
+        },
+        {
+            "label": "6 - Logs Celular",
+            "type": "shell",
+            "command": "adb -s SC8T5LBMVKWKWWP7 logcat | findstr /I \"ReactNativeJS ReactNative JavascriptException AndroidRuntime expo com.festhausgame 8082\"",
+            "options": {
+                "cwd": "C:\\FestHausGame"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "new",
+                "group": "logs",
+                "reveal": "always",
+                "clear": true
+            }
+        }
+    ]
+}
