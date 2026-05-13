@@ -1,14 +1,14 @@
 import { useRouter } from 'expo-router';
 import { useContext, useState } from 'react';
 import {
-    Alert,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthUserContext } from '../../../context/AuthUserProvider';
@@ -75,7 +75,9 @@ const SignUp = () => {
           <TextInput
             style={styles.input}
             placeholder="Nome Completo"
+            placeholderTextColor="#999"
             keyboardType="default"
+            autoCapitalize="words"
             editable={!loading}
             value={nome}
             onChangeText={setNome}
@@ -84,7 +86,10 @@ const SignUp = () => {
           <TextInput
             style={styles.input}
             placeholder="Email"
+            placeholderTextColor="#999"
             keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
             editable={!loading}
             value={email}
             onChangeText={setEmail}
@@ -93,7 +98,10 @@ const SignUp = () => {
           <TextInput
             style={styles.input}
             placeholder="Senha"
-            secureTextEntry={true}
+            placeholderTextColor="#999"
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
             editable={!loading}
             value={senha}
             onChangeText={setSenha}
@@ -102,7 +110,10 @@ const SignUp = () => {
           <TextInput
             style={styles.input}
             placeholder="Confirmar Senha"
-            secureTextEntry={true}
+            placeholderTextColor="#999"
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
             editable={!loading}
             value={confirmaSenha}
             onChangeText={setConfirmaSenha}
@@ -165,10 +176,12 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
-    padding: 12,
+    padding: 13,
     marginBottom: 15,
     borderRadius: 8,
     fontSize: 16,
+    backgroundColor: '#fff',
+    color: '#333',
   },
   buttonContainer: {
     marginVertical: 20,

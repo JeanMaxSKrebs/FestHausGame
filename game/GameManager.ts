@@ -406,11 +406,12 @@ export class GameManager {
 
   private addGameLog(playerId: string, action: string, description: string, card?: Item | null) {
     const player = this.gameState.players.get(playerId);
+    const isSystemLog = playerId === 'system';
 
     this.gameState.gameLog.unshift({
       id: `log_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       playerId,
-      playerName: player?.name || 'Jogador',
+      playerName: isSystemLog ? 'Sistema' : player?.name || 'Jogador',
       card: card || null,
       action,
       description,
@@ -614,6 +615,13 @@ export class GameManager {
 
     this.gameState.currentTurn.drawnCard = card;
     this.gameState.currentTurn.actionTaken = 'drawn';
+
+    this.addGameLog(
+      playerId,
+      'Carta comprada',
+      `${this.gameState.players.get(playerId)?.name || 'Jogador'} comprou uma carta.`,
+      card
+    );
 
     this.syncStateToFirestore();
 
@@ -1311,6 +1319,12 @@ export class GameManager {
         tied
           ? `Empate: ${targetNames.join(', ')} bebem ${totalDoses} dose(s) cada. ${extraDoses > 0 ? `+${extraDoses} por coringa.` : ''}`
           : `${targetNames[0]} foi o mais votado e bebe ${totalDoses} dose(s). ${extraDoses > 0 ? `+${extraDoses} por coringa.` : ''}`,
+        null
+      );
+      this.addGameLog(
+        'system',
+        'Votação encerrada',
+        'Ninguém votou. A rodada terminou sem dose extra.',
         null
       );
     }

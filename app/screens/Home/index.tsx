@@ -23,6 +23,7 @@ const Home = () => {
   const router = useRouter();
 
   const [nickname, setNickname] = useState('');
+  const [logoutLoading, setLogoutLoading] = useState(false);
 
   useEffect(() => {
     async function loadNickname() {
@@ -44,6 +45,12 @@ const Home = () => {
     loadNickname();
   }, [user?.nome, user?.email]);
 
+  useEffect(() => {
+    if (!user) {
+      router.replace('/screens/SignIn');
+    }
+  }, [user, router]);
+
   const getSafeNickname = async () => {
     const trimmedNickname = nickname.trim();
 
@@ -63,7 +70,15 @@ const Home = () => {
   };
 
   const handleLogout = async () => {
-    await signOut();
+    try {
+      setLogoutLoading(true);
+      await signOut();
+      router.replace('/screens/SignIn');
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || 'Não foi possível sair da conta.');
+    } finally {
+      setLogoutLoading(false);
+    }
   };
 
   const handleCreateRoom = async () => {
@@ -218,12 +233,16 @@ const Home = () => {
         </View>
 
         <TouchableOpacity
-          style={styles.logoutButton}
+          style={[styles.logoutButton, logoutLoading && styles.logoutButtonDisabled]}
           onPress={handleLogout}
+          disabled={logoutLoading}
           activeOpacity={0.8}
         >
           <FontAwesome name="sign-out" size={18} color="#fff" />
-          <Text style={styles.logoutButtonText}>SAIR</Text>
+
+          <Text style={styles.logoutButtonText}>
+            {logoutLoading ? 'SAINDO...' : 'SAIR'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -368,6 +387,11 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
+  logoutButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   logoutButton: {
     backgroundColor: '#FF3B30',
     paddingVertical: 14,
@@ -378,10 +402,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  logoutButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+
+  logoutButtonDisabled: {
+    opacity: 0.6,
   },
   soloOption: {
     borderWidth: 1,

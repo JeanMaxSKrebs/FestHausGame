@@ -107,6 +107,10 @@ const GameScreen = () => {
   const [secretVoteEnabled, setSecretVoteEnabled] = useState(false);
   const [showSecretVoteInfo, setShowSecretVoteInfo] = useState(false);
 
+
+  const currentGameMode = gameState?.roomConfig?.gameMode || gameMode;
+  const shouldShowBonusRules = currentGameMode === 'bonus';
+
   useEffect(() => {
     if (!gameState?.roundVote?.active) return;
 
@@ -1087,7 +1091,8 @@ const GameScreen = () => {
         <GameRulesModal
           visible={showRules}
           isSoloMode={isSoloMode}
-          gameMode={gameMode}
+          gameMode={currentGameMode}
+          showBonus={shouldShowBonusRules}
           onClose={() => setShowRules(false)}
         />
         <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -1348,7 +1353,7 @@ const GameScreen = () => {
                   activeOpacity={0.8}
                 >
                   <Text style={styles.buttonText}>
-                    {isSoloMode ? 'VER REGRAS' : 'VER REGRAS E BÔNUS'}
+                    {shouldShowBonusRules ? 'VER REGRAS E BÔNUS' : 'VER REGRAS'}
                   </Text>
                 </TouchableOpacity>
 
@@ -1376,7 +1381,7 @@ const GameScreen = () => {
                   onPress={() => setShowRules(true)}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.buttonText}>{isSoloMode ? 'VER REGRAS' : 'VER REGRAS E BÔNUS'}</Text>
+                  <Text style={styles.buttonText}>{shouldShowBonusRules ? 'VER REGRAS E BÔNUS' : 'VER REGRAS'}</Text>
                 </TouchableOpacity>
 
                 <View style={styles.waitingCard}>
@@ -1527,7 +1532,7 @@ const GameScreen = () => {
             onPress={() => setShowRules(true)}
             activeOpacity={0.8}
           >
-            <Text style={styles.buttonText}>{isSoloMode ? 'VER REGRAS' : 'VER REGRAS E BÔNUS'}</Text>
+            <Text style={styles.buttonText}>{shouldShowBonusRules ? 'VER REGRAS E BÔNUS' : 'VER REGRAS'}</Text>
           </TouchableOpacity>
 
           <View style={styles.tableArea}>

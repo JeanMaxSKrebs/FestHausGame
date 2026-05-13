@@ -116,6 +116,7 @@ type GameRulesModalProps = {
     visible: boolean;
     isSoloMode?: boolean;
     gameMode?: 'normal' | 'bonus' | string;
+    showBonus?: boolean;
     onClose: () => void;
 };
 
@@ -123,16 +124,17 @@ export function GameRulesModal({
     visible,
     isSoloMode = false,
     gameMode = 'normal',
+    showBonus,
     onClose,
 }: GameRulesModalProps) {
-    const shouldShowBonus = !isSoloMode && gameMode === 'bonus';
+    const shouldShowBonus = Boolean(showBonus ?? (!isSoloMode && gameMode === 'bonus'));
 
     return (
         <Modal visible={visible} transparent animationType="fade">
             <View style={styles.modalOverlay}>
                 <View style={styles.rulesModal}>
                     <Text style={styles.rulesTitle}>
-                        {isSoloMode ? 'Regras' : 'Regras e Bônus'}
+                        {shouldShowBonus ? 'Regras e Bônus' : 'Regras'}
                     </Text>
 
                     <ScrollView
