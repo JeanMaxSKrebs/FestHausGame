@@ -43,3 +43,10 @@ app-example
 # generated native folders
 /ios
 /android
+
+credentials.json
+gradle-error.log
+erros-festhaus.txt
+*.jks
+*.keystore
+credentials/
