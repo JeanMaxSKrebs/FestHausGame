@@ -45,6 +45,29 @@ function getTimeFromPossibleTimestamp(value: any) {
 
 const MAX_PLAYERS = 12;
 const MIN_PLAYERS_TO_START = 2;
+const SOLO_DECK_PRESETS = [
+  { label: 'Ultra rápido', multiplier: 1, cards: 52 },
+  { label: 'Rápido', multiplier: 2, cards: 104 },
+  { label: 'Normal', multiplier: 3, cards: 156 },
+  { label: 'Longo', multiplier: 4, cards: 208 },
+  { label: 'Muito longo', multiplier: 5, cards: 260 },
+  { label: 'Maratona', multiplier: 6, cards: 312 },
+];
+
+const NORMAL_DECK_PRESETS = [
+  { label: 'Ultra rápido', multiplier: 1, cards: 52 },
+  { label: 'Rápido', multiplier: 2, cards: 104 },
+  { label: 'Normal', multiplier: 3, cards: 156 },
+  { label: 'Longo', multiplier: 4, cards: 208 },
+  { label: 'Muito longo', multiplier: 5, cards: 260 },
+  { label: 'Maratona', multiplier: 6, cards: 312 },
+];
+
+const BONUS_DECK_PRESETS = [
+  { label: 'Normal', multiplier: 1, cards: 104 },
+  { label: 'Longo', multiplier: 2, cards: 208 },
+  { label: 'Maratona', multiplier: 3, cards: 312 },
+];
 
 const GameScreen = () => {
   const router = useRouter();
@@ -79,6 +102,10 @@ const GameScreen = () => {
   const [bathroomName, setBathroomName] = useState('');
 
   const [generalRuleText, setGeneralRuleText] = useState('');
+  const [soloPlayerCount, setSoloPlayerCount] = useState(1);
+  const [deckMultiplier, setDeckMultiplier] = useState(3);
+  const [secretVoteEnabled, setSecretVoteEnabled] = useState(false);
+  const [showSecretVoteInfo, setShowSecretVoteInfo] = useState(false);
 
   useEffect(() => {
     if (!gameState?.roundVote?.active) return;
@@ -157,6 +184,31 @@ const GameScreen = () => {
     user?.uid && roundVote?.jokerUsers?.includes(user.uid)
   );
 
+  const getCurrentActionPlayerId = () => {
+    if (!user?.uid) return null;
+
+    if (!isSoloMode) {
+      return user.uid;
+    }
+
+    return (
+      gameManager?.getGameState().currentTurn?.currentPlayerId ||
+      gameState?.currentTurn?.currentPlayerId ||
+      user.uid
+    );
+  };
+
+  const handleGameModeChange = (mode: 'normal' | 'bonus') => {
+    setGameMode(mode);
+
+    if (mode === 'bonus') {
+      setDeckMultiplier(1);
+      return;
+    }
+
+    setDeckMultiplier(3);
+  };
+
   const handleUseBathroomPass = (passId: string) => {
     try {
       if (!gameManager) {
@@ -194,12 +246,14 @@ const GameScreen = () => {
     }
 
     try {
-      if (!gameManager || !user?.uid) {
-        Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
+      const actionPlayerId = getCurrentActionPlayerId();
+
+      if (!gameManager || !actionPlayerId) {
+        Alert.alert('Erro', 'Jogo ou jogador não inicializado.');
         return;
       }
 
-      gameManager.useBathroomFromDrawnCard(user.uid, name);
+      gameManager.useBathroomFromDrawnCard(actionPlayerId, name);
 
       setBathroomName('');
       setRevealModalVisible(false);
@@ -208,7 +262,6 @@ const GameScreen = () => {
       Alert.alert('Erro', error?.message || String(error));
     }
   };
-
   const handleAddGeneralRule = () => {
     const rule = generalRuleText.trim();
 
@@ -218,12 +271,14 @@ const GameScreen = () => {
     }
 
     try {
-      if (!gameManager || !user?.uid) {
-        Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
+      const actionPlayerId = getCurrentActionPlayerId();
+
+      if (!gameManager || !actionPlayerId) {
+        Alert.alert('Erro', 'Jogo ou jogador não inicializado.');
         return;
       }
 
-      gameManager.addGeneralRuleFromDrawnCard(user.uid, rule);
+      gameManager.addGeneralRuleFromDrawnCard(actionPlayerId, rule);
 
       setGeneralRuleText('');
       setRevealModalVisible(false);
@@ -342,6 +397,21 @@ const GameScreen = () => {
           state.kingCupCount = Number(roomData.gameState.kingCupCount || 0);
           state.roomConfig.status = 'playing';
           state.roomConfig.gameMode = roomData.gameState.roomConfig?.gameMode || 'normal';
+          state.roomConfig.secretVoteEnabled = Boolean(
+            roomData.gameState.roomConfig?.secretVoteEnabled
+          );
+
+          state.roomConfig.deckMultiplier = Number(
+            roomData.gameState.roomConfig?.deckMultiplier || 1
+          );
+
+          state.roomConfig.baseDeckCards = Number(
+            roomData.gameState.roomConfig?.baseDeckCards || 52
+          );
+
+          setGameMode(state.roomConfig.gameMode || 'normal');
+          setSecretVoteEnabled(Boolean(state.roomConfig.secretVoteEnabled));
+          setDeckMultiplier(Number(state.roomConfig.deckMultiplier || 1));
           state.generalRules = Array.isArray(roomData.gameState.generalRules)
             ? roomData.gameState.generalRules
             : [];
@@ -485,6 +555,9 @@ const GameScreen = () => {
                   status: 'lobby',
                   createdAt: new Date(),
                   gameMode,
+                  secretVoteEnabled,
+                  deckMultiplier,
+                  baseDeckCards: gameMode === 'bonus' ? deckMultiplier * 104 : deckMultiplier * 52,
                 },
                 user.uid
               );
@@ -638,7 +711,11 @@ const GameScreen = () => {
     }
 
     if (user?.uid) {
-      const hand = manager.getPlayerHand(user.uid);
+      const handPlayerId = isSoloMode
+        ? state.currentTurn?.currentPlayerId || user.uid
+        : user.uid;
+
+      const hand = manager.getPlayerHand(handPlayerId);
       setPlayerHand(hand || null);
     }
   };
@@ -733,8 +810,32 @@ const GameScreen = () => {
         );
         return;
       }
+      if (isSoloMode && user?.uid) {
+        const currentPlayer: Player = {
+          id: user.uid,
+          name: getPlayerName(),
+          phone: params.phone || '',
+          email: user.email,
+          profileImage: user.photoURL || undefined,
+          joinedAt: new Date(),
+          isActive: true,
+        };
+
+        gameManager.configureSoloBeforeStart(
+          currentPlayer,
+          soloPlayerCount,
+          deckMultiplier
+        );
+      }
+
 
       gameManager.getGameState().roomConfig.gameMode = gameMode;
+      gameManager.getGameState().roomConfig.secretVoteEnabled = secretVoteEnabled;
+      gameManager.getGameState().roomConfig.deckMultiplier = deckMultiplier;
+      gameManager.getGameState().roomConfig.baseDeckCards =
+        gameMode === 'bonus'
+          ? deckMultiplier * 104
+          : deckMultiplier * 52;
       gameManager.startGame();
 
       setGameStarted(true);
@@ -746,12 +847,14 @@ const GameScreen = () => {
 
   const handleDrawCard = () => {
     try {
-      if (!gameManager || !user?.uid) {
+      const actionPlayerId = getCurrentActionPlayerId();
+
+      if (!gameManager || !actionPlayerId) {
         Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
         return;
       }
 
-      gameManager.drawCard(user.uid);
+      gameManager.drawCard(actionPlayerId);
       updateGameState(gameManager);
 
       setTimeout(() => {
@@ -764,12 +867,14 @@ const GameScreen = () => {
 
   const handlePlayDrawnCard = () => {
     try {
-      if (!gameManager || !user?.uid) {
+      const actionPlayerId = getCurrentActionPlayerId();
+
+      if (!gameManager || !actionPlayerId) {
         Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
         return;
       }
 
-      gameManager.playDrawnCard(user.uid);
+      gameManager.playDrawnCard(actionPlayerId);
       setRevealModalVisible(false);
       updateGameState(gameManager);
     } catch (error: any) {
@@ -779,27 +884,30 @@ const GameScreen = () => {
 
   const handleKeepDrawnCard = () => {
     try {
-      if (!gameManager || !user?.uid) {
+      const actionPlayerId = getCurrentActionPlayerId();
+
+      if (!gameManager || !actionPlayerId) {
         Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
         return;
       }
 
-      gameManager.keepDrawnCard(user.uid);
+      gameManager.keepDrawnCard(actionPlayerId);
       setRevealModalVisible(false);
       updateGameState(gameManager);
     } catch (error: any) {
       Alert.alert('Erro', error?.message || String(error));
     }
   };
-
   const handleTradeBathroomCard = () => {
     try {
-      if (!gameManager || !user?.uid) {
+      const actionPlayerId = getCurrentActionPlayerId();
+
+      if (!gameManager || !actionPlayerId) {
         Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
         return;
       }
 
-      gameManager.tradeBathroomCard(user.uid);
+      gameManager.tradeBathroomCard(actionPlayerId);
       setRevealModalVisible(false);
       updateGameState(gameManager);
     } catch (error: any) {
@@ -809,12 +917,14 @@ const GameScreen = () => {
 
   const handlePlaySavedCard = (cardId: string) => {
     try {
-      if (!gameManager || !user?.uid) {
+      const actionPlayerId = getCurrentActionPlayerId();
+
+      if (!gameManager || !actionPlayerId) {
         Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
         return;
       }
 
-      gameManager.playSavedCard(user.uid, cardId);
+      gameManager.playSavedCard(actionPlayerId, cardId);
       setSelectedCard(null);
       updateGameState(gameManager);
     } catch (error: any) {
@@ -1040,13 +1150,176 @@ const GameScreen = () => {
                 </Text>
               </View>
             )}
+            {isSoloMode && (
+              <View style={styles.soloSetupBox}>
+                <Text style={styles.soloSetupTitle}>Configuração rápida</Text>
+
+                <Text style={styles.soloSetupLabel}>Quantidade de pessoas</Text>
+
+                <View style={styles.soloPlayerGrid}>
+                  {Array.from({ length: 12 }, (_, index) => index + 1).map((count) => (
+                    <TouchableOpacity
+                      key={count}
+                      style={[
+                        styles.soloPlayerButton,
+                        soloPlayerCount === count && styles.soloPlayerButtonActive,
+                      ]}
+                      onPress={() => setSoloPlayerCount(count)}
+                      activeOpacity={0.85}
+                    >
+                      <Text
+                        style={[
+                          styles.soloPlayerButtonText,
+                          soloPlayerCount === count && styles.soloPlayerButtonTextActive,
+                        ]}
+                      >
+                        {count}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.soloSetupLabel}>Quantidade de cartas</Text>
+
+                <View style={styles.deckPresetList}>
+                  {SOLO_DECK_PRESETS.map((preset) => (
+                    <TouchableOpacity
+                      key={preset.multiplier}
+                      style={[
+                        styles.deckPresetButton,
+                        deckMultiplier === preset.multiplier && styles.deckPresetButtonActive,
+                      ]}
+                      onPress={() => setDeckMultiplier(preset.multiplier)}
+                      activeOpacity={0.85}
+                    >
+                      <View>
+                        <Text
+                          style={[
+                            styles.deckPresetTitle,
+                            deckMultiplier === preset.multiplier && styles.deckPresetTitleActive,
+                          ]}
+                        >
+                          {preset.label}
+                        </Text>
+
+                        <Text
+                          style={[
+                            styles.deckPresetSubtitle,
+                            deckMultiplier === preset.multiplier && styles.deckPresetSubtitleActive,
+                          ]}
+                        >
+                          {preset.cards} cartas
+                        </Text>
+                      </View>
+
+                      {deckMultiplier === preset.multiplier && (
+                        <FontAwesome name="check-circle" size={20} color="#fff" />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.soloSetupSummary}>
+                  Jogo solo com {soloPlayerCount} pessoa(s) e{' '}
+                  {SOLO_DECK_PRESETS.find((preset) => preset.multiplier === deckMultiplier)?.cards || 52}{' '}
+                  cartas.
+                </Text>
+              </View>
+            )}
 
             {isHost && (
               <>
                 {!isSoloMode && (
-                  <GameModeSelector gameMode={gameMode} onChange={setGameMode} />
+                  <GameModeSelector gameMode={gameMode} onChange={handleGameModeChange} />
                 )}
 
+                {!isSoloMode && (
+                  <View style={styles.onlineSetupBox}>
+                    <Text style={styles.onlineSetupTitle}>Configuração da partida</Text>
+
+                    <Text style={styles.onlineSetupLabel}>Quantidade de cartas</Text>
+
+                    <View style={styles.deckPresetList}>
+                      {(gameMode === 'bonus' ? BONUS_DECK_PRESETS : NORMAL_DECK_PRESETS).map((preset) => (
+                        <TouchableOpacity
+                          key={`${gameMode}-${preset.multiplier}`}
+                          style={[
+                            styles.deckPresetButton,
+                            deckMultiplier === preset.multiplier && styles.deckPresetButtonActive,
+                          ]}
+                          onPress={() => setDeckMultiplier(preset.multiplier)}
+                          activeOpacity={0.85}
+                        >
+                          <View>
+                            <Text
+                              style={[
+                                styles.deckPresetTitle,
+                                deckMultiplier === preset.multiplier && styles.deckPresetTitleActive,
+                              ]}
+                            >
+                              {preset.label}
+                            </Text>
+
+                            <Text
+                              style={[
+                                styles.deckPresetSubtitle,
+                                deckMultiplier === preset.multiplier && styles.deckPresetSubtitleActive,
+                              ]}
+                            >
+                              {preset.cards} cartas
+                              {gameMode === 'bonus' ? ' + coringas' : ''}
+                            </Text>
+                          </View>
+
+                          {deckMultiplier === preset.multiplier && (
+                            <FontAwesome name="check-circle" size={20} color="#fff" />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <View style={styles.secretVoteRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.secretVoteToggle,
+                          secretVoteEnabled && styles.secretVoteToggleActive,
+                        ]}
+                        onPress={() => setSecretVoteEnabled((prev) => !prev)}
+                        activeOpacity={0.85}
+                      >
+                        <FontAwesome
+                          name={secretVoteEnabled ? 'check-square-o' : 'square-o'}
+                          size={18}
+                          color={secretVoteEnabled ? '#fff' : '#333'}
+                        />
+
+                        <Text
+                          style={[
+                            styles.secretVoteToggleText,
+                            secretVoteEnabled && styles.secretVoteToggleTextActive,
+                          ]}
+                        >
+                          Voto secreto {secretVoteEnabled ? 'ligado' : 'desligado'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.secretVoteHelpButton}
+                        onPress={() => setShowSecretVoteInfo((prev) => !prev)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.secretVoteHelpText}>?</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {showSecretVoteInfo && (
+                      <Text style={styles.secretVoteInfoText}>
+                        Fim de cada rodada: todos votam em segredo. O mais votado bebe 1.
+                        Em empate, todos os empatados bebem. No bônus, coringas guardados aumentam a dose.
+                      </Text>
+                    )}
+                  </View>
+                )}
                 {!isSoloMode && (
                   <>
                     <TouchableOpacity
@@ -1175,6 +1448,8 @@ const GameScreen = () => {
         secondsLeft={voteSecondsLeft}
         onVote={handleVoteForPlayer}
         onUseJoker={handleUseJokerVote}
+        gameMode={gameState?.roomConfig?.gameMode || gameMode}
+        result={gameState?.roundVote?.result}
       />
       <ScrollView contentContainerStyle={styles.gameScrollContent}>
         <View style={styles.gameContainer}>
@@ -1233,6 +1508,20 @@ const GameScreen = () => {
             </View>
           )}
 
+          {isSoloMode && gameStarted && gameState?.currentTurn && (
+            <View style={styles.soloTurnBox}>
+              <Text style={styles.soloTurnLabel}>Vez de</Text>
+
+              <Text style={styles.soloTurnPlayer}>
+                {gameState.players.get(gameState.currentTurn.currentPlayerId)?.name || 'Jogador'}
+              </Text>
+
+              <Text style={styles.soloTurnHint}>
+                Passe o celular para essa pessoa jogar.
+              </Text>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[styles.button, styles.rulesButton]}
             onPress={() => setShowRules(true)}
@@ -1277,45 +1566,45 @@ const GameScreen = () => {
 
           {!isSoloMode && (
 
-          <View style={styles.handContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.handTitle}>Cartas guardadas</Text>
+            <View style={styles.handContainer}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.handTitle}>Cartas guardadas</Text>
 
-              <View style={styles.handBadge}>
-                <Text style={styles.handBadgeText}>
-                  {playerHand?.items.length || 0}
-                </Text>
+                <View style={styles.handBadge}>
+                  <Text style={styles.handBadgeText}>
+                    {playerHand?.items.length || 0}
+                  </Text>
+                </View>
               </View>
+
+              {playerHand?.items?.length ? (
+                <ScrollView
+                  horizontal
+                  style={styles.cardsScroll}
+                  contentContainerStyle={styles.cardsScrollContent}
+                  showsHorizontalScrollIndicator={false}
+                >
+                  {playerHand.items.map((item: any) => (
+                    <GameCard
+                      key={item.id}
+                      item={item}
+                      selected={selectedCard?.id === item.id}
+                      onPress={() => setSelectedCard(item)}
+                    />
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.emptyHandBox}>
+                  <Text style={styles.emptyHandIcon}>🃏</Text>
+                  <Text style={styles.emptyHandText}>
+                    Você ainda não guardou nenhuma carta.
+                  </Text>
+                  <Text style={styles.emptyHandHint}>
+                    Compre uma carta na sua vez e escolha “Guardar”.
+                  </Text>
+                </View>
+              )}
             </View>
-
-            {playerHand?.items?.length ? (
-              <ScrollView
-                horizontal
-                style={styles.cardsScroll}
-                contentContainerStyle={styles.cardsScrollContent}
-                showsHorizontalScrollIndicator={false}
-              >
-                {playerHand.items.map((item: any) => (
-                  <GameCard
-                    key={item.id}
-                    item={item}
-                    selected={selectedCard?.id === item.id}
-                    onPress={() => setSelectedCard(item)}
-                  />
-                ))}
-              </ScrollView>
-            ) : (
-              <View style={styles.emptyHandBox}>
-                <Text style={styles.emptyHandIcon}>🃏</Text>
-                <Text style={styles.emptyHandText}>
-                  Você ainda não guardou nenhuma carta.
-                </Text>
-                <Text style={styles.emptyHandHint}>
-                  Compre uma carta na sua vez e escolha “Guardar”.
-                </Text>
-              </View>
-            )}
-          </View>
           )}
 
 
@@ -1424,7 +1713,7 @@ const GameScreen = () => {
             )}
           </View>
 
-          {!isSoloMode &&isHost && gameState && (
+          {!isSoloMode && isHost && gameState && (
             <View style={styles.hostPanel}>
               <Text style={styles.hostPanelTitle}>Controles do host</Text>
 
@@ -2233,6 +2522,229 @@ const styles = StyleSheet.create({
 
   kingCupSoloDescriptionDanger: {
     color: '#b00020',
+  },
+  soloSetupBox: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+  },
+
+  soloSetupTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#2b1233',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+
+  soloSetupLabel: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#333',
+    marginTop: 10,
+    marginBottom: 8,
+  },
+
+  soloPlayerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  soloPlayerButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fafafa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  soloPlayerButtonActive: {
+    backgroundColor: '#8E44AD',
+    borderColor: '#8E44AD',
+  },
+
+  soloPlayerButtonText: {
+    color: '#333',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  soloPlayerButtonTextActive: {
+    color: '#fff',
+  },
+
+  deckPresetList: {
+    gap: 8,
+  },
+
+  deckPresetButton: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: '#fafafa',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  deckPresetButtonActive: {
+    backgroundColor: '#8E44AD',
+    borderColor: '#8E44AD',
+  },
+
+  deckPresetTitle: {
+    color: '#333',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  deckPresetTitleActive: {
+    color: '#fff',
+  },
+
+  deckPresetSubtitle: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '700',
+  },
+
+  deckPresetSubtitleActive: {
+    color: '#f3e8ff',
+  },
+
+  soloSetupSummary: {
+    marginTop: 12,
+    color: '#666',
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+
+  soloTurnBox: {
+    backgroundColor: '#f7f1fb',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+    alignItems: 'center',
+  },
+
+  soloTurnLabel: {
+    color: '#7c3aed',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+
+  soloTurnPlayer: {
+    color: '#2b1233',
+    fontSize: 24,
+    fontWeight: '900',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+
+  soloTurnHint: {
+    color: '#666',
+    fontSize: 13,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  onlineSetupBox: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+  },
+
+  onlineSetupTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#2b1233',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+
+  onlineSetupLabel: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#333',
+    marginTop: 10,
+    marginBottom: 8,
+  },
+
+  secretVoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+
+  secretVoteToggle: {
+    flex: 1,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: '#fafafa',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+  secretVoteToggleActive: {
+    backgroundColor: '#8E44AD',
+    borderColor: '#8E44AD',
+  },
+
+  secretVoteToggleText: {
+    color: '#333',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  secretVoteToggleTextActive: {
+    color: '#fff',
+  },
+
+  secretVoteHelpButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#2b1233',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  secretVoteHelpText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  secretVoteInfoText: {
+    marginTop: 10,
+    color: '#666',
+    fontSize: 12,
+    lineHeight: 17,
+    backgroundColor: '#f7f1fb',
+    borderRadius: 12,
+    padding: 10,
   },
 });
 

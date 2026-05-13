@@ -15,11 +15,12 @@ export interface RoundVoteState {
   votes: Record<string, string>; // playerId -> targetPlayerId
   jokerUsers: string[]; // quem usou coringa
   result?: {
-    targetPlayerId: string;
-    targetPlayerName: string;
+    targetPlayerIds: string[];
+    targetPlayerNames: string[];
     votes: number;
     extraDoses: number;
     totalDoses: number;
+    tied: boolean;
   };
 }
 
@@ -70,6 +71,8 @@ export interface RoomConfig {
   deckMultiplier?: number;
   virtualPlayerCount?: number;
   secretVoteEnabled?: boolean;
+
+  baseDeckCards?: number;
 }
 
 export interface Player {

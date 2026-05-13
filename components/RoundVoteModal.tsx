@@ -12,6 +12,15 @@ type RoundVoteModalProps = {
     hasJoker: boolean;
     jokerUsed: boolean;
     secondsLeft: number;
+    gameMode?: 'normal' | 'bonus';
+    result?: {
+        targetPlayerIds: string[];
+        targetPlayerNames: string[];
+        votes: number;
+        extraDoses: number;
+        totalDoses: number;
+        tied: boolean;
+    };
     onVote: (targetPlayerId: string) => void;
     onUseJoker: () => void;
 };
@@ -26,8 +35,10 @@ export function RoundVoteModal({
     secondsLeft,
     onVote,
     onUseJoker,
+    gameMode = 'normal',
+    result,
 }: RoundVoteModalProps) {
-    const canUseJoker = hasJoker && !jokerUsed;
+    const canUseJoker = gameMode === 'bonus' && hasJoker && !jokerUsed;
 
     const voteOptions = useMemo(
         () => players.filter((player) => player.id !== currentUserId),
@@ -38,11 +49,14 @@ export function RoundVoteModal({
         <Modal visible={visible} transparent animationType="slide">
             <View style={styles.overlay}>
                 <View style={styles.modal}>
-                    <Text style={styles.title}>Votação bônus</Text>
+                    <Text style={styles.title}>
+                        {gameMode === 'bonus' ? 'Votação bônus' : 'Voto secreto'}
+                    </Text>
                     <Text style={styles.timer}>{secondsLeft}s</Text>
 
                     <Text style={styles.subtitle}>
-                        Vote secretamente em alguém para beber 1 dose.
+                        Vote secretamente. O mais votado bebe 1 dose.
+                        {gameMode === 'bonus' ? ' Coringas guardados aumentam a dose.' : ''}
                     </Text>
 
                     <ScrollView style={styles.list}>
@@ -67,7 +81,7 @@ export function RoundVoteModal({
                         ))}
                     </ScrollView>
 
-                    {hasJoker && (
+                    {gameMode === 'bonus' && hasJoker && (
                         <TouchableOpacity
                             style={[
                                 styles.jokerButton,
@@ -82,9 +96,25 @@ export function RoundVoteModal({
                         </TouchableOpacity>
                     )}
 
-                    <Text style={styles.footer}>
-                        Os votos só aparecem no resultado final.
-                    </Text>
+                    {result && (
+                        <View style={styles.resultBox}>
+                            <Text style={styles.resultTitle}>
+                                {result.tied ? 'Empate!' : 'Resultado'}
+                            </Text>
+
+                            <Text style={styles.resultText}>
+                                {result.tied
+                                    ? `${result.targetPlayerNames.join(', ')} bebem ${result.totalDoses} dose(s) cada.`
+                                    : `${result.targetPlayerNames[0]} bebe ${result.totalDoses} dose(s).`}
+                            </Text>
+
+                            {result.extraDoses > 0 && (
+                                <Text style={styles.resultBonus}>
+                                    +{result.extraDoses} dose(s) por coringa.
+                                </Text>
+                            )}
+                        </View>
+                    )}
                 </View>
             </View>
         </Modal>
@@ -178,5 +208,36 @@ const styles = StyleSheet.create({
         color: '#777',
         textAlign: 'center',
         marginTop: 12,
+    },
+    resultBox: {
+        backgroundColor: '#fff7e6',
+        borderWidth: 1,
+        borderColor: '#ffd280',
+        borderRadius: 14,
+        padding: 12,
+        marginTop: 10,
+    },
+
+    resultTitle: {
+        color: '#7a4d00',
+        fontSize: 15,
+        fontWeight: '900',
+        textAlign: 'center',
+    },
+
+    resultText: {
+        color: '#333',
+        fontSize: 14,
+        fontWeight: '800',
+        textAlign: 'center',
+        marginTop: 6,
+    },
+
+    resultBonus: {
+        color: '#FF9500',
+        fontSize: 13,
+        fontWeight: '900',
+        textAlign: 'center',
+        marginTop: 4,
     },
 });

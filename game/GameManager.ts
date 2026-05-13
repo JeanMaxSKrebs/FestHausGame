@@ -88,9 +88,24 @@ export class GameManager {
     };
     this.isSoloMode = isSoloMode;
     this.initializeItemPool();
-    
+
   }
-  
+
+  private getEffectiveDeckMultiplier(): number {
+    const mode = this.gameState?.roomConfig?.gameMode || 'normal';
+    const multiplier = Math.max(this.deckMultiplier || 1, 1);
+
+    if (mode === 'bonus') {
+      return Math.min(multiplier, 3) * 2;
+    }
+
+    return Math.min(multiplier, 6);
+  }
+
+  private getBaseDeckCards(): number {
+    return this.getEffectiveDeckMultiplier() * 52;
+  }
+
   private calculateItemPoolConfig(maxPlayers: number, deckMultiplier: number = 1): ItemPoolConfig {
     const totalItems = 52 * deckMultiplier;
 
@@ -215,10 +230,11 @@ export class GameManager {
   private initializeItemPool(): Item[] {
     const items: Item[] = [];
     const categories: ItemCategory[] = ['espadas', 'ouro', 'copas', 'paus'];
+    const effectiveDeckMultiplier = this.getEffectiveDeckMultiplier();
 
     let itemId = 0;
 
-    for (let deckIndex = 0; deckIndex < this.deckMultiplier; deckIndex++) {
+    for (let deckIndex = 0; deckIndex < effectiveDeckMultiplier; deckIndex++) {
       categories.forEach((category) => {
         for (let value = 1; value <= 13; value++) {
           const rule = this.getCardRule(value);
@@ -240,6 +256,8 @@ export class GameManager {
     }
 
     this.gameState.itemPool = this.shuffleArray(items);
+    this.gameState.roomConfig.baseDeckCards = items.length;
+
     return this.gameState.itemPool;
   }
 
@@ -313,6 +331,7 @@ export class GameManager {
         deckMultiplier: this.gameState.roomConfig.deckMultiplier || this.deckMultiplier,
         virtualPlayerCount: this.gameState.roomConfig.virtualPlayerCount || this.virtualPlayerCount,
         secretVoteEnabled: Boolean(this.gameState.roomConfig.secretVoteEnabled),
+        baseDeckCards: this.gameState.roomConfig.baseDeckCards || this.getBaseDeckCards(),
       },
       players: Array.from(this.gameState.players.values()).map((player) =>
         this.serializePlayer(player)
@@ -351,6 +370,17 @@ export class GameManager {
       rankings: this.gameState.rankings || [],
       kingCupCount: this.gameState.kingCupCount || 0,
     };
+  }
+
+  private applyJokerPenalty(playerId: string, card: Item): void {
+    const player = this.gameState.players.get(playerId);
+
+    this.addGameLog(
+      playerId,
+      'Coringa usado fora da votação',
+      `${player?.name || 'Jogador'} usou Coringa fora da votação e bebe 3 doses.`,
+      card
+    );
   }
 
 
@@ -520,7 +550,7 @@ export class GameManager {
     this.gameState.round = 1;
     if (!this.isSoloMode && this.gameState.roomConfig.gameMode === 'bonus') {
       this.addJokersForPlayers();
-    }    
+    }
     Array.from(this.gameState.players.keys()).forEach((playerId) => {
       this.ensurePlayerHand(playerId);
     });
@@ -770,7 +800,9 @@ export class GameManager {
     this.applyCardEffect(playerId, turn.drawnCard);
     this.gameState.discardPile.push(turn.drawnCard);
 
-    const shouldShowInHistory = turn.drawnCard.value !== 4;
+    const shouldShowInHistory =
+      turn.drawnCard.value !== 4 &&
+      turn.drawnCard.actionType !== 'joker';
 
     if (shouldShowInHistory) {
       this.addGameLog(
@@ -783,7 +815,7 @@ export class GameManager {
 
     this.finishCurrentTurn();
   }
-  
+
   playSavedCard(playerId: string, cardId: string): void {
     const hand = this.ensurePlayerHand(playerId);
     const cardIndex = hand.items.findIndex((item) => item.id === cardId);
@@ -801,7 +833,9 @@ export class GameManager {
     this.applyCardEffect(playerId, card);
     this.gameState.discardPile.push(card);
 
-    const shouldShowInHistory = card.value !== 4;
+    const shouldShowInHistory =
+      card.value !== 4 &&
+      card.actionType !== 'joker';
 
     if (shouldShowInHistory) {
       this.addGameLog(
@@ -907,13 +941,6 @@ export class GameManager {
     this.gameState.discardPile.push(card);
 
     if (card.actionType === 'joker') {
-      this.addGameLog(
-        playerId,
-        'Coringa usado fora da votação',
-        `${player?.name || 'Jogador'} usou Coringa fora da votação e bebe 3 doses.`,
-        card
-      );
-
       return;
     }
 
@@ -937,6 +964,11 @@ export class GameManager {
   }
 
   private applyCardEffect(playerId: string, card: Item): void {
+    if (card.actionType === 'joker' && this.gameState.status !== 'round_vote') {
+      this.applyJokerPenalty(playerId, card);
+      return;
+    }
+
     if (card.value === 13) {
       this.gameState.kingCupCount += 1;
 
@@ -957,6 +989,7 @@ export class GameManager {
       }
     }
   }
+  
   private finishCurrentTurn(): void {
     const finishedTurn = this.gameState.currentTurn;
 
@@ -971,7 +1004,14 @@ export class GameManager {
     if (finishedFullRound) {
       this.resetRoundTradeOptions();
 
-      if (this.gameState.roomConfig.gameMode === 'bonus') {
+      this.addGameLog(
+        'system',
+        'Fim da rodada',
+        `Rodada ${this.gameState.round} finalizada.`,
+        null
+      );
+
+      if (!this.isSoloMode && this.gameState.roomConfig.secretVoteEnabled) {
         this.startRoundVote();
         this.syncStateToFirestore();
 
@@ -994,6 +1034,7 @@ export class GameManager {
       round: this.gameState.round,
     });
   }
+
   private resetRoundTradeOptions(): void {
     const reset: Record<string, boolean> = {};
 
@@ -1106,7 +1147,7 @@ export class GameManager {
 
   private startRoundVote(): void {
     const now = new Date();
-    const endsAt = new Date(now.getTime() + 45 * 1000);
+    const endsAt = new Date(now.getTime() + 30 * 1000);
 
     this.gameState.status = 'round_vote';
 
@@ -1121,8 +1162,8 @@ export class GameManager {
 
     this.addGameLog(
       'system',
-      'Votação bônus',
-      `Fim da rodada ${this.gameState.round}. Votação secreta iniciada por 45 segundos.`,
+      'Voto secreto',
+      `Fim da rodada ${this.gameState.round}. Voto secreto iniciado por 30 segundos.`,
       null
     );
   }
@@ -1203,8 +1244,16 @@ export class GameManager {
     }
 
     const joker = hand.items.splice(jokerIndex, 1)[0];
+
     this.gameState.discardPile.push(joker);
     this.gameState.roundVote.jokerUsers.push(playerId);
+
+    this.addGameLog(
+      playerId,
+      'Coringa na votação',
+      `${this.gameState.players.get(playerId)?.name || 'Jogador'} usou um Coringa na votação secreta. A dose do mais votado aumenta em +1.`,
+      joker
+    );
 
     this.syncStateToFirestore();
   }
@@ -1222,33 +1271,46 @@ export class GameManager {
       counts[targetPlayerId] = (counts[targetPlayerId] || 0) + 1;
     });
 
-    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-    const [targetPlayerId, voteCount] = sorted[0] || [];
+    const entries = Object.entries(counts);
+    const highestVotes = entries.length
+      ? Math.max(...entries.map(([, count]) => count))
+      : 0;
 
-    if (!targetPlayerId) {
+    if (!highestVotes) {
       this.addGameLog(
         'system',
         'Votação encerrada',
-        'Ninguém votou. A rodada terminou sem dose bônus.',
+        'Ninguém votou. A rodada terminou sem dose extra.',
         null
       );
     } else {
-      const targetPlayer = this.gameState.players.get(targetPlayerId);
+      const tiedTargetIds = entries
+        .filter(([, count]) => count === highestVotes)
+        .map(([playerId]) => playerId);
+
+      const targetNames = tiedTargetIds.map((playerId) => {
+        return this.gameState.players.get(playerId)?.name || 'Jogador';
+      });
+
       const extraDoses = vote.jokerUsers.length;
       const totalDoses = 1 + extraDoses;
+      const tied = tiedTargetIds.length > 1;
 
       vote.result = {
-        targetPlayerId,
-        targetPlayerName: targetPlayer?.name || 'Jogador',
-        votes: voteCount,
+        targetPlayerIds: tiedTargetIds,
+        targetPlayerNames: targetNames,
+        votes: highestVotes,
         extraDoses,
         totalDoses,
+        tied,
       };
 
       this.addGameLog(
         'system',
-        'Resultado da votação',
-        `${targetPlayer?.name || 'Jogador'} foi o mais votado e bebe ${totalDoses} dose(s). ${extraDoses > 0 ? `+${extraDoses} por coringa.` : ''}`,
+        'Resultado do voto secreto',
+        tied
+          ? `Empate: ${targetNames.join(', ')} bebem ${totalDoses} dose(s) cada. ${extraDoses > 0 ? `+${extraDoses} por coringa.` : ''}`
+          : `${targetNames[0]} foi o mais votado e bebe ${totalDoses} dose(s). ${extraDoses > 0 ? `+${extraDoses} por coringa.` : ''}`,
         null
       );
     }
@@ -1258,10 +1320,14 @@ export class GameManager {
     this.gameState.round += 1;
 
     const firstPlayerId = this.getPlayerOrder()[0];
-    this.startTurn(firstPlayerId);
+
+    if (firstPlayerId) {
+      this.startTurn(firstPlayerId);
+    }
 
     this.syncStateToFirestore();
   }
+
   kickPlayerByHost(hostId: string, targetPlayerId: string): void {
     if (this.gameState.roomConfig.hostId !== hostId) {
       throw new Error('Apenas o host pode banir jogadores.');
