@@ -1,45 +1,50 @@
 {
   "project_info": {
-    "project_number": "833177196919",
-    "project_id": "max-rpg-d4423",
-    "storage_bucket": "max-rpg-d4423.appspot.com"
+    "project_number": "390859126921",
+    "project_id": "fest-haus-drinking-game",
+    "storage_bucket": "fest-haus-drinking-game.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:833177196919:android:bc1cf195e5778a0f3fa972",
+        "mobilesdk_app_id": "1:390859126921:android:2e45510bbfe5670886ee58",
         "android_client_info": {
-          "package_name": "com.festhausgame"
+          "package_name": "com.festhaus.drinkinggame"
         }
       },
       "oauth_client": [
         {
-          "client_id": "833177196919-k76oeqmegsh7htlff6r18mtdnhm93jef.apps.googleusercontent.com",
+          "client_id": "390859126921-fdj917khslo5c4si452hvabefuj34gfv.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.festhausgame",
-            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+            "package_name": "com.festhaus.drinkinggame",
+            "certificate_hash": "931607219c894105b29ec6f582cd3f1d67c43c59"
           }
+        },
+        {
+          "client_id": "390859126921-fdj917khslo5c4si452hvabefuj34gfv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.festhaus.drinkinggame",
+            "certificate_hash": "965f9362eb7019b301553d4d66fdd09893a1fd1a"
+          }
+        },
+        {
+          "client_id": "390859126921-uis7ivptg19pfh6qt76pt7654sihl7fo.apps.googleusercontent.com",
+          "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyA-vKD8woMgvkVF1VPAjKcdAf-qgZAWYBU"
+          "current_key": "AIzaSyBerpMUaeyNcFjacvVFs9qiyl4RLC-GgMY"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "833177196919-si3u02ni4ek02m50npnb58ar4d8777ss.apps.googleusercontent.com",
+              "client_id": "390859126921-uis7ivptg19pfh6qt76pt7654sihl7fo.apps.googleusercontent.com",
               "client_type": 3
-            },
-            {
-              "client_id": "833177196919-3kgvdd6oani71fkplptbpi17tl4atap7.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.festhausgame"
-              }
             }
           ]
         }

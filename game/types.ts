@@ -66,6 +66,10 @@ export interface RoomConfig {
   endedAt?: Date;
   whatsappInviteLink?: string;
   gameMode?: GameMode;
+
+  deckMultiplier?: number;
+  virtualPlayerCount?: number;
+  secretVoteEnabled?: boolean;
 }
 
 export interface Player {
@@ -122,6 +126,8 @@ export interface GameState {
   kingCupCount: number;
   roundVote?: RoundVoteState;
   tradeLockedPlayers: Record<string, boolean>;
+  generalRules: GeneralRuleEntry[];
+  bathroomPasses: BathroomPassEntry[];
 }
 
 export interface ItemPoolConfig {
@@ -135,6 +141,23 @@ export interface ValidationResult {
   reason?: string;
   canPlayTrump?: boolean;
   mustFollowCategory?: boolean;
+}
+
+export interface GeneralRuleEntry {
+  id: string;
+  text: string;
+  cardId: string;
+  playerId: string;
+  playerName: string;
+  createdAt: Date;
+}
+
+export interface BathroomPassEntry {
+  id: string;
+  name: string;
+  cardId: string;
+  playerId: string;
+  createdAt: Date;
 }
 
 export type GameEventType =

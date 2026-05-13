@@ -26,7 +26,7 @@ type CardRevealModalProps = {
     bathroomName?: string;
     onBathroomNameChange?: (value: string) => void;
     onSaveBathroomName?: () => void;
-
+    gameMode?: 'normal' | 'bonus';
     generalRuleText?: string;
     onGeneralRuleTextChange?: (value: string) => void;
     onSaveGeneralRule?: () => void;
@@ -114,6 +114,7 @@ export function CardRevealModal({
     isMyTurn,
     hasSavedCard,
     soloMode = false,
+    gameMode = 'normal',
 
     bathroomName = '',
     onBathroomNameChange,
@@ -128,6 +129,7 @@ export function CardRevealModal({
     onTradeBathroom,
     onClose,
 }: CardRevealModalProps) {
+
     const scaleAnim = useRef(new Animated.Value(0.75)).current;
     const opacityAnim = useRef(new Animated.Value(0)).current;
     const flipAnim = useRef(new Animated.Value(0)).current;
@@ -135,6 +137,12 @@ export function CardRevealModal({
     const isBathroomCard = card?.value === 10;
     const isGeneralRuleCard = card?.value === 8;
 
+    const canKeepCard =
+        !soloMode &&
+        (
+            gameMode === 'bonus' ||
+            (gameMode === 'normal' && isBathroomCard)
+        );
     useEffect(() => {
         if (!visible || !card) {
             scaleAnim.setValue(0.75);
@@ -260,7 +268,7 @@ export function CardRevealModal({
                         </View>
                     )}
 
-                    {soloMode && isGeneralRuleCard && (
+                    {isGeneralRuleCard && (
                         <View style={styles.extraInputBox}>
                             <Text style={styles.extraInputTitle}>Nova regra geral</Text>
 
@@ -285,15 +293,17 @@ export function CardRevealModal({
 
                     {isMyTurn ? (
                         <View style={styles.actions}>
-                            <TouchableOpacity
-                                style={[styles.actionButton, styles.useButton]}
-                                onPress={onUseNow}
-                                activeOpacity={0.85}
-                            >
-                                <Text style={styles.actionText}>USAR AGORA</Text>
-                            </TouchableOpacity>
+                            {!isGeneralRuleCard && (
+                                <TouchableOpacity
+                                    style={[styles.actionButton, styles.useButton]}
+                                    onPress={onUseNow}
+                                    activeOpacity={0.85}
+                                >
+                                    <Text style={styles.actionText}>USAR AGORA</Text>
+                                </TouchableOpacity>
+                            )}
 
-                            {!soloMode && !hasSavedCard && (
+                            {canKeepCard && !hasSavedCard && (
                                 <TouchableOpacity
                                     style={[styles.actionButton, styles.keepButton]}
                                     onPress={onKeep}
@@ -303,19 +313,23 @@ export function CardRevealModal({
                                 </TouchableOpacity>
                             )}
 
-                            {!soloMode && hasSavedCard && isBathroomCard && (
+                            {!soloMode && hasSavedCard && canKeepCard && (
                                 <TouchableOpacity
                                     style={[styles.actionButton, styles.tradeButton]}
                                     onPress={handleTradePress}
                                     activeOpacity={0.85}
                                 >
-                                    <Text style={styles.actionText}>TROCAR CARTA</Text>
+                                    <Text style={styles.actionText}>
+                                        {gameMode === 'bonus' ? 'GUARDAR E USAR A ANTIGA' : 'TROCAR BANHEIRO'}
+                                    </Text>
                                 </TouchableOpacity>
                             )}
 
-                            {!soloMode && hasSavedCard && !isBathroomCard && (
+                            {!soloMode && !canKeepCard && (
                                 <Text style={styles.shortWarning}>
-                                    Já tem carta guardada.
+                                    {gameMode === 'normal'
+                                        ? 'No modo normal, só cartas Banheiro podem ser guardadas.'
+                                        : 'Essa carta não pode ser guardada.'}
                                 </Text>
                             )}
                         </View>

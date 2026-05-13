@@ -18,6 +18,12 @@ import {
   RoomType
 } from './types';
 
+export type GameManagerOptions = {
+  deckMultiplier?: number;
+  virtualPlayerCount?: number;
+  secretVoteEnabled?: boolean;
+};
+
 export class GameManager {
   private gameState: GameState;
   private eventListeners: Map<GameEventType, Function[]>;
@@ -25,6 +31,9 @@ export class GameManager {
   private roomId: string;
   private roomType: RoomType;
   private isSoloMode: boolean = false;
+  private deckMultiplier: number = 1;
+  private virtualPlayerCount: number = 1;
+  private secretVoteEnabled: boolean = false;
 
   constructor(
     roomId: string,
@@ -32,14 +41,23 @@ export class GameManager {
     roomType: RoomType,
     maxPlayers: number = 12,
     gameMode: GameMode = 'normal',
-    isSoloMode: boolean = false
+    isSoloMode: boolean = false,
+    options: GameManagerOptions = {}
+
   ) {
     this.roomId = roomId;
     this.roomType = roomType;
     this.eventListeners = new Map();
+
+    this.deckMultiplier = Math.min(Math.max(options.deckMultiplier || 1, 1), 6);
+    this.virtualPlayerCount = Math.min(Math.max(options.virtualPlayerCount || 1, 1), 12);
+    this.secretVoteEnabled = Boolean(options.secretVoteEnabled);
+
     this.itemPoolConfig = this.calculateItemPoolConfig(maxPlayers);
 
     this.gameState = {
+      bathroomPasses: [],
+      generalRules: [],
       roomId,
       roomConfig: {
         roomId,
@@ -50,6 +68,9 @@ export class GameManager {
         status: 'lobby',
         createdAt: new Date(),
         gameMode,
+        deckMultiplier: this.deckMultiplier,
+        virtualPlayerCount: this.virtualPlayerCount,
+        secretVoteEnabled: this.secretVoteEnabled,
       },
       players: new Map(),
       playerHands: new Map(),
@@ -70,9 +91,8 @@ export class GameManager {
     
   }
   
-
-  private calculateItemPoolConfig(maxPlayers: number): ItemPoolConfig {
-    const totalItems = 52;
+  private calculateItemPoolConfig(maxPlayers: number, deckMultiplier: number = 1): ItemPoolConfig {
+    const totalItems = 52 * deckMultiplier;
 
     const categories: ItemCategory[] = ['espadas', 'ouro', 'copas', 'paus'];
     const itemsPerCategory = Math.ceil(totalItems / categories.length);
@@ -198,24 +218,26 @@ export class GameManager {
 
     let itemId = 0;
 
-    categories.forEach((category) => {
-      for (let value = 1; value <= 13; value++) {
-        const rule = this.getCardRule(value);
+    for (let deckIndex = 0; deckIndex < this.deckMultiplier; deckIndex++) {
+      categories.forEach((category) => {
+        for (let value = 1; value <= 13; value++) {
+          const rule = this.getCardRule(value);
 
-        items.push({
-          id: `card_${category}_${value}_${itemId}`,
-          name: this.getDisplayName(category, value),
-          category,
-          value,
-          isTrump: false,
-          ruleTitle: rule.title,
-          ruleDescription: rule.description,
-          actionType: rule.actionType,
-        });
+          items.push({
+            id: `deck_${deckIndex}_card_${category}_${value}_${itemId}`,
+            name: this.getDisplayName(category, value),
+            category,
+            value,
+            isTrump: false,
+            ruleTitle: rule.title,
+            ruleDescription: rule.description,
+            actionType: rule.actionType,
+          });
 
-        itemId++;
-      }
-    });
+          itemId++;
+        }
+      });
+    }
 
     this.gameState.itemPool = this.shuffleArray(items);
     return this.gameState.itemPool;
@@ -288,6 +310,9 @@ export class GameManager {
         startedAt: this.gameState.roomConfig.startedAt || null,
         endedAt: this.gameState.roomConfig.endedAt || null,
         gameMode: this.gameState.roomConfig.gameMode || 'normal',
+        deckMultiplier: this.gameState.roomConfig.deckMultiplier || this.deckMultiplier,
+        virtualPlayerCount: this.gameState.roomConfig.virtualPlayerCount || this.virtualPlayerCount,
+        secretVoteEnabled: Boolean(this.gameState.roomConfig.secretVoteEnabled),
       },
       players: Array.from(this.gameState.players.values()).map((player) =>
         this.serializePlayer(player)
@@ -307,11 +332,27 @@ export class GameManager {
       round: this.gameState.round,
       gameHistory: this.gameState.gameHistory || [],
       gameLog: this.gameState.gameLog || [],
+      generalRules: (this.gameState.generalRules || []).map((rule) => ({
+        id: rule.id,
+        text: rule.text,
+        cardId: rule.cardId,
+        playerId: rule.playerId,
+        playerName: rule.playerName,
+        createdAt: rule.createdAt || new Date(),
+      })),
+      bathroomPasses: (this.gameState.bathroomPasses || []).map((pass) => ({
+        id: pass.id,
+        name: pass.name,
+        cardId: pass.cardId,
+        playerId: pass.playerId,
+        createdAt: pass.createdAt || new Date(),
+      })),
       status: this.gameState.status,
       rankings: this.gameState.rankings || [],
       kingCupCount: this.gameState.kingCupCount || 0,
     };
   }
+
 
   private getPlayerOrder(): string[] {
     return Array.from(this.gameState.players.keys()).filter((playerId) => {
@@ -360,6 +401,68 @@ export class GameManager {
     }
 
     return this.gameState.playerHands.get(playerId)!;
+  }
+
+  configureSoloBeforeStart(mainPlayer: Player, playerCount: number, deckMultiplier: number): void {
+    if (!this.isSoloMode) {
+      throw new Error('Essa configuração é apenas para o modo solo.');
+    }
+
+    if (this.gameState.status !== 'waiting') {
+      throw new Error('Só é possível alterar pessoas/cartas antes de iniciar o jogo.');
+    }
+
+    const safePlayerCount = Math.min(Math.max(playerCount, 1), 12);
+    const safeDeckMultiplier = Math.min(Math.max(deckMultiplier, 1), 6);
+
+    this.virtualPlayerCount = safePlayerCount;
+    this.deckMultiplier = safeDeckMultiplier;
+
+    this.gameState.roomConfig.maxPlayers = safePlayerCount;
+    this.gameState.roomConfig.currentPlayers = safePlayerCount;
+    this.gameState.roomConfig.virtualPlayerCount = safePlayerCount;
+    this.gameState.roomConfig.deckMultiplier = safeDeckMultiplier;
+
+    this.itemPoolConfig = this.calculateItemPoolConfig(safePlayerCount, safeDeckMultiplier);
+
+    this.gameState.players.clear();
+    this.gameState.playerHands.clear();
+
+    const normalizedMainPlayer: Player = {
+      ...mainPlayer,
+      id: mainPlayer.id,
+      name: mainPlayer.name || 'Jogador 1',
+      joinedAt: new Date(),
+      isActive: true,
+    };
+
+    this.gameState.players.set(normalizedMainPlayer.id, normalizedMainPlayer);
+    this.ensurePlayerHand(normalizedMainPlayer.id);
+
+    for (let index = 2; index <= safePlayerCount; index++) {
+      const virtualPlayer: Player = {
+        id: `solo_virtual_${index}`,
+        name: `Jogador ${index}`,
+        phone: '',
+        email: '',
+        joinedAt: new Date(),
+        isActive: true,
+      };
+
+      this.gameState.players.set(virtualPlayer.id, virtualPlayer);
+      this.ensurePlayerHand(virtualPlayer.id);
+    }
+
+    this.gameState.itemPool = [];
+    this.gameState.discardPile = [];
+    this.gameState.turns = [];
+    this.gameState.gameHistory = [];
+    this.gameState.gameLog = [];
+    this.gameState.kingCupCount = 0;
+    this.gameState.round = 0;
+    this.gameState.currentTurn = null as any;
+
+    this.initializeItemPool();
   }
 
   addPlayer(player: Player): void {
@@ -508,27 +611,139 @@ export class GameManager {
     const drawnCard = turn.drawnCard;
     const hasSavedCard = hand.items.length >= 1;
     const isBathroomCard = drawnCard.value === 10;
+    const currentMode = this.gameState.roomConfig.gameMode || 'normal';
 
-    if (hasSavedCard && !isBathroomCard) {
+    if (this.isSoloMode) {
       throw new Error(
-        'Você só pode guardar uma carta. Use a carta comprada agora ou use sua carta guardada antes.'
+        isBathroomCard
+          ? 'No modo solo, a carta Banheiro deve ser usada adicionando o nome da pessoa.'
+          : 'No modo solo, as cartas não devem ser guardadas.'
       );
     }
 
-    if (hasSavedCard && isBathroomCard) {
-      const oldCard = hand.items.shift();
+    if (currentMode === 'normal' && !isBathroomCard) {
+      throw new Error('No modo normal, só é permitido guardar cartas de Banheiro.');
+    }
 
-      if (oldCard) {
-        this.gameState.discardPile.push(oldCard);
+    if (currentMode === 'normal') {
+      if (hasSavedCard) {
+        const oldCard = hand.items.shift();
+
+        if (oldCard) {
+          this.gameState.discardPile.push(oldCard);
+
+          this.addGameLog(
+            playerId,
+            'Banheiro substituído',
+            `${this.gameState.players.get(playerId)?.name || 'Jogador'} substituiu a carta Banheiro guardada por outra carta Banheiro.`,
+            oldCard
+          );
+        }
       }
 
       hand.items.push(drawnCard);
-    } else {
-      hand.items.push(drawnCard);
+
+      turn.keptCard = drawnCard;
+      turn.actionTaken = 'kept';
+
+      this.addGameLog(
+        playerId,
+        'Banheiro guardado',
+        `${this.gameState.players.get(playerId)?.name || 'Jogador'} guardou uma carta Banheiro.`,
+        drawnCard
+      );
+
+      this.finishCurrentTurn();
+      return;
     }
 
-    turn.keptCard = drawnCard;
-    turn.actionTaken = 'kept';
+    if (currentMode === 'bonus') {
+      if (hasSavedCard) {
+        const oldCard = hand.items.shift();
+
+        if (oldCard) {
+          this.forceUseStoredCard(playerId, oldCard);
+        }
+      }
+
+      hand.items.push(drawnCard);
+
+      turn.keptCard = drawnCard;
+      turn.actionTaken = 'kept';
+
+      this.addGameLog(
+        playerId,
+        'Carta guardada',
+        `${this.gameState.players.get(playerId)?.name || 'Jogador'} guardou ${drawnCard.name}.`,
+        drawnCard
+      );
+
+      this.finishCurrentTurn();
+      return;
+    }
+
+    throw new Error('Modo de jogo inválido.');
+  }
+
+  addGeneralRuleFromDrawnCard(playerId: string, text: string): void {
+    const turn = this.gameState.currentTurn;
+
+    if (this.gameState.status !== 'active') {
+      throw new Error('O jogo ainda não está ativo.');
+    }
+
+    if (turn.currentPlayerId !== playerId) {
+      throw new Error('Ainda não é sua vez.');
+    }
+
+    if (!turn.drawnCard) {
+      throw new Error('Compre uma carta primeiro.');
+    }
+
+    if (turn.drawnCard.value !== 8) {
+      throw new Error('A carta comprada não é Regra Geral.');
+    }
+
+    const cleanText = text.trim();
+
+    if (!cleanText) {
+      throw new Error('Digite a regra geral antes de usar a carta.');
+    }
+
+    const alreadyUsed = this.gameState.generalRules.some(
+      (rule) => rule.cardId === turn.drawnCard?.id
+    );
+
+    if (alreadyUsed) {
+      throw new Error('Essa carta já gerou uma regra geral.');
+    }
+
+    const player = this.gameState.players.get(playerId);
+    const rule = this.getRuleFromCard(turn.drawnCard);
+
+    turn.drawnCard.ruleTitle = rule.title;
+    turn.drawnCard.ruleDescription = cleanText;
+
+    this.gameState.generalRules.push({
+      id: `general_rule_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      text: cleanText,
+      cardId: turn.drawnCard.id,
+      playerId,
+      playerName: player?.name || 'Jogador',
+      createdAt: new Date(),
+    });
+
+    turn.playedCard = turn.drawnCard;
+    turn.actionTaken = 'played';
+
+    this.gameState.discardPile.push(turn.drawnCard);
+
+    this.addGameLog(
+      playerId,
+      'Regra geral criada',
+      `${player?.name || 'Jogador'} criou uma regra geral: "${cleanText}".`,
+      turn.drawnCard
+    );
 
     this.finishCurrentTurn();
   }
@@ -608,43 +823,117 @@ export class GameManager {
   }
 
   tradeBathroomCard(playerId: string): void {
+    this.keepDrawnCard(playerId);
+  }
+
+
+  useBathroomFromDrawnCard(playerId: string, name?: string): void {
     const turn = this.gameState.currentTurn;
+
+    if (this.gameState.status !== 'active') {
+      throw new Error('O jogo ainda não está ativo.');
+    }
 
     if (turn.currentPlayerId !== playerId) {
       throw new Error('Ainda não é sua vez.');
     }
 
-    if (!turn.drawnCard || turn.drawnCard.value !== 10) {
-      throw new Error('Apenas a carta Banheiro pode ser negociada nesta ação.');
+    if (!turn.drawnCard) {
+      throw new Error('Compre uma carta primeiro.');
     }
 
-    const hand = this.ensurePlayerHand(playerId);
-
-    if (hand.items.length >= 1) {
-      const oldCard = hand.items.shift();
-
-      if (oldCard) {
-        this.gameState.discardPile.push(oldCard);
-      }
+    if (turn.drawnCard.value !== 10) {
+      throw new Error('A carta comprada não é Banheiro.');
     }
 
-    hand.items.push(turn.drawnCard);
+    const player = this.gameState.players.get(playerId);
+    const cleanName = name?.trim() || '';
 
-    turn.keptCard = turn.drawnCard;
-    turn.actionTaken = 'kept';
+    if (this.isSoloMode && !cleanName) {
+      throw new Error('Digite o nome da pessoa que ficou com a carta Banheiro.');
+    }
 
-    this.addGameLog(
-      playerId,
-      'Banheiro negociado',
-      `${this.gameState.players.get(playerId)?.name || 'Jogador'} guardou/negociou a carta Banheiro.`,
-      turn.drawnCard
-    );
+    const rule = this.getRuleFromCard(turn.drawnCard);
+
+    turn.drawnCard.ruleTitle = rule.title;
+    turn.drawnCard.ruleDescription = rule.description;
+
+    turn.playedCard = turn.drawnCard;
+    turn.actionTaken = 'played';
+
+    this.gameState.discardPile.push(turn.drawnCard);
+
+    if (this.isSoloMode) {
+      const pass = {
+        id: `bathroom_pass_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        name: cleanName,
+        cardId: turn.drawnCard.id,
+        playerId,
+        createdAt: new Date(),
+      };
+
+      this.gameState.bathroomPasses.push(pass);
+
+      this.addGameLog(
+        playerId,
+        'Banheiro adicionado',
+        `${cleanName} recebeu uma carta Banheiro.`,
+        turn.drawnCard
+      );
+    } else {
+      this.addGameLog(
+        playerId,
+        'Banheiro usado',
+        `${player?.name || 'Jogador'} usou a carta Banheiro.`,
+        turn.drawnCard
+      );
+    }
 
     this.finishCurrentTurn();
   }
 
   private isBonusDrinkCard(card: Item): boolean {
     return ['drink', 'king_cup'].includes(card.actionType || '');
+  }
+
+  private forceUseStoredCard(playerId: string, card: Item): void {
+    const player = this.gameState.players.get(playerId);
+    const rule = this.getRuleFromCard(card);
+
+    card.ruleTitle = rule.title;
+    card.ruleDescription = rule.description;
+
+    this.applyCardEffect(playerId, card);
+    this.gameState.discardPile.push(card);
+
+    if (card.actionType === 'joker') {
+      this.addGameLog(
+        playerId,
+        'Coringa usado fora da votação',
+        `${player?.name || 'Jogador'} usou Coringa fora da votação e bebe 3 doses.`,
+        card
+      );
+
+      return;
+    }
+
+    if (card.value === 10) {
+      this.addGameLog(
+        playerId,
+        'Banheiro usado automaticamente',
+        `${player?.name || 'Jogador'} usou/descartou a carta Banheiro guardada antes de guardar outra carta.`,
+        card
+      );
+
+      return;
+    }
+
+    this.addGameLog(
+      playerId,
+      'Carta guardada usada automaticamente',
+      `${player?.name || 'Jogador'} usou automaticamente a carta guardada ${card.name}: ${rule.title} — ${rule.description}`,
+      card
+    );
   }
 
   private applyCardEffect(playerId: string, card: Item): void {
@@ -852,6 +1141,48 @@ export class GameManager {
     }
 
     this.gameState.roundVote.votes[voterId] = targetPlayerId;
+    this.syncStateToFirestore();
+  }
+
+  useBathroomPass(passId: string): void {
+    const passIndex = this.gameState.bathroomPasses.findIndex(
+      (pass) => pass.id === passId
+    );
+
+    if (passIndex < 0) {
+      throw new Error('Carta Banheiro não encontrada.');
+    }
+
+    const [pass] = this.gameState.bathroomPasses.splice(passIndex, 1);
+
+    this.addGameLog(
+      pass.playerId,
+      'Banheiro usado',
+      `${pass.name} usou a carta Banheiro.`,
+      null
+    );
+
+    this.syncStateToFirestore();
+  }
+
+  removeBathroomPass(passId: string): void {
+    const passIndex = this.gameState.bathroomPasses.findIndex(
+      (pass) => pass.id === passId
+    );
+
+    if (passIndex < 0) {
+      throw new Error('Carta Banheiro não encontrada.');
+    }
+
+    const [pass] = this.gameState.bathroomPasses.splice(passIndex, 1);
+
+    this.addGameLog(
+      pass.playerId,
+      'Banheiro removido',
+      `Carta Banheiro de ${pass.name} removida.`,
+      null
+    );
+
     this.syncStateToFirestore();
   }
 

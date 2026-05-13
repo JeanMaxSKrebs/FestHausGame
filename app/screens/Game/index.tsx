@@ -77,10 +77,8 @@ const GameScreen = () => {
   const isHost = Boolean(user?.uid && gameManager?.getRoomConfig().hostId === user.uid);
 
   const [bathroomName, setBathroomName] = useState('');
-  const [bathroomUsers, setBathroomUsers] = useState<string[]>([]);
 
   const [generalRuleText, setGeneralRuleText] = useState('');
-  const [generalRules, setGeneralRules] = useState<string[]>([]);
 
   useEffect(() => {
     if (!gameState?.roundVote?.active) return;
@@ -159,6 +157,34 @@ const GameScreen = () => {
     user?.uid && roundVote?.jokerUsers?.includes(user.uid)
   );
 
+  const handleUseBathroomPass = (passId: string) => {
+    try {
+      if (!gameManager) {
+        Alert.alert('Erro', 'GameManager não inicializado.');
+        return;
+      }
+
+      gameManager.useBathroomPass(passId);
+      updateGameState(gameManager);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || String(error));
+    }
+  };
+
+  const handleRemoveBathroomPass = (passId: string) => {
+    try {
+      if (!gameManager) {
+        Alert.alert('Erro', 'GameManager não inicializado.');
+        return;
+      }
+
+      gameManager.removeBathroomPass(passId);
+      updateGameState(gameManager);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || String(error));
+    }
+  };
+
   const handleAddBathroomUser = () => {
     const name = bathroomName.trim();
 
@@ -167,8 +193,20 @@ const GameScreen = () => {
       return;
     }
 
-    setBathroomUsers((prev) => [...prev, name]);
-    setBathroomName('');
+    try {
+      if (!gameManager || !user?.uid) {
+        Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
+        return;
+      }
+
+      gameManager.useBathroomFromDrawnCard(user.uid, name);
+
+      setBathroomName('');
+      setRevealModalVisible(false);
+      updateGameState(gameManager);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || String(error));
+    }
   };
 
   const handleAddGeneralRule = () => {
@@ -179,8 +217,20 @@ const GameScreen = () => {
       return;
     }
 
-    setGeneralRules((prev) => [...prev, rule]);
-    setGeneralRuleText('');
+    try {
+      if (!gameManager || !user?.uid) {
+        Alert.alert('Erro', 'Jogo ou usuário não inicializado.');
+        return;
+      }
+
+      gameManager.addGeneralRuleFromDrawnCard(user.uid, rule);
+
+      setGeneralRuleText('');
+      setRevealModalVisible(false);
+      updateGameState(gameManager);
+    } catch (error: any) {
+      Alert.alert('Erro', error?.message || String(error));
+    }
   };
 
   const handleVoteForPlayer = (targetPlayerId: string) => {
@@ -292,6 +342,13 @@ const GameScreen = () => {
           state.kingCupCount = Number(roomData.gameState.kingCupCount || 0);
           state.roomConfig.status = 'playing';
           state.roomConfig.gameMode = roomData.gameState.roomConfig?.gameMode || 'normal';
+          state.generalRules = Array.isArray(roomData.gameState.generalRules)
+            ? roomData.gameState.generalRules
+            : [];
+
+          state.bathroomPasses = Array.isArray(roomData.gameState.bathroomPasses)
+            ? roomData.gameState.bathroomPasses
+            : [];
 
           if (Array.isArray(roomData.gameState.players)) {
             roomData.gameState.players.forEach((player: any) => {
@@ -1093,6 +1150,7 @@ const GameScreen = () => {
         isMyTurn={isSoloMode ? true : isMyTurn}
         hasSavedCard={isSoloMode ? false : (playerHand?.items.length || 0) >= 1}
         soloMode={isSoloMode}
+        gameMode={gameMode}
 
         bathroomName={bathroomName}
         onBathroomNameChange={setBathroomName}
@@ -1134,6 +1192,43 @@ const GameScreen = () => {
               <Text style={styles.soloGameTitle}>Modo Solo</Text>
               <Text style={styles.soloGameSubtitle}>
                 {gameState?.itemPool?.length || 0} cartas no monte
+              </Text>
+            </View>
+          )}
+
+          {isSoloMode && gameStarted && gameState && (
+            <View
+              style={[
+                styles.kingCupSoloBox,
+                gameState.kingCupCount >= 4 && styles.kingCupSoloBoxDanger,
+              ]}
+            >
+              <View style={styles.kingCupSoloHeader}>
+                <Text style={styles.kingCupSoloIcon}>👑</Text>
+
+                <View style={styles.kingCupSoloTextBox}>
+                  <Text style={styles.kingCupSoloTitle}>Rei do Copo</Text>
+
+                  <Text
+                    style={[
+                      styles.kingCupSoloCounter,
+                      gameState.kingCupCount >= 4 && styles.kingCupSoloCounterDanger,
+                    ]}
+                  >
+                    Reis do Copo: {Math.min(gameState.kingCupCount || 0, 4)}/4
+                  </Text>
+                </View>
+              </View>
+
+              <Text
+                style={[
+                  styles.kingCupSoloDescription,
+                  gameState.kingCupCount >= 4 && styles.kingCupSoloDescriptionDanger,
+                ]}
+              >
+                {gameState.kingCupCount >= 4
+                  ? '4º Rei! Vire o copo central.'
+                  : 'Os 3 primeiros reis colocam bebida no copo. O 4º vira tudo.'}
               </Text>
             </View>
           )}
@@ -1253,29 +1348,61 @@ const GameScreen = () => {
             </View>
           )}
 
-          {isSoloMode && bathroomUsers.length > 0 && (
+          {isSoloMode && gameState?.bathroomPasses?.length ? (
             <View style={styles.soloListBox}>
-              <Text style={styles.soloListTitle}>🚻 Banheiros</Text>
+              <Text style={styles.soloListTitle}>🚻 Cartas Banheiro</Text>
 
-              {bathroomUsers.map((name, index) => (
-                <Text key={`${name}-${index}`} style={styles.soloListItem}>
-                  {index + 1}. {name}
-                </Text>
+              {gameState.bathroomPasses.map((pass, index) => (
+                <View key={pass.id} style={styles.bathroomPassItem}>
+                  <View style={styles.bathroomPassInfo}>
+                    <Text style={styles.bathroomPassName}>
+                      {index + 1}. {pass.name}
+                    </Text>
+
+                    <Text style={styles.bathroomPassMeta}>
+                      Carta Banheiro disponível
+                    </Text>
+                  </View>
+
+                  <View style={styles.bathroomPassActions}>
+                    <TouchableOpacity
+                      style={[styles.bathroomPassButton, styles.bathroomPassUseButton]}
+                      onPress={() => handleUseBathroomPass(pass.id)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.bathroomPassButtonText}>Usou</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.bathroomPassButton, styles.bathroomPassRemoveButton]}
+                      onPress={() => handleRemoveBathroomPass(pass.id)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.bathroomPassButtonText}>Excluir</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               ))}
             </View>
-          )}
+          ) : null}
 
-          {isSoloMode && generalRules.length > 0 && (
+          {gameState?.generalRules?.length ? (
             <View style={styles.soloListBox}>
-              <Text style={styles.soloListTitle}>📜 Regras Gerais</Text>
+              <Text style={styles.soloListTitle}>📜 Regras Gerais Ativas</Text>
 
-              {generalRules.map((rule, index) => (
-                <Text key={`${rule}-${index}`} style={styles.soloListItem}>
-                  {index + 1}. {rule}
-                </Text>
+              {gameState.generalRules.map((rule, index) => (
+                <View key={rule.id} style={styles.soloListItem}>
+                  <Text style={styles.soloListItemText}>
+                    {index + 1}. {rule.text}
+                  </Text>
+
+                  <Text style={styles.soloListItemMeta}>
+                    Criada por {rule.playerName}
+                  </Text>
+                </View>
               ))}
             </View>
-          )}
+          ) : null}
 
           <View style={styles.logContainer}>
             <View style={styles.sectionHeader}>
@@ -1966,27 +2093,146 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   soloListBox: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 14,
+    backgroundColor: '#fff7e6',
     borderWidth: 1,
-    borderColor: '#eadcf5',
+    borderColor: '#ffd280',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
   },
 
   soloListTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
-    color: '#2b1233',
+    color: '#7a4d00',
     marginBottom: 8,
   },
 
   soloListItem: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 6,
+  },
+
+  soloListItemText: {
+    color: '#333',
     fontSize: 14,
-    color: '#444',
     fontWeight: '700',
-    marginBottom: 5,
-    lineHeight: 20,
+  },
+
+  soloListItemMeta: {
+    color: '#777',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  bathroomPassItem: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#e8e0ef',
+  },
+
+  bathroomPassInfo: {
+    marginBottom: 8,
+  },
+
+  bathroomPassName: {
+    color: '#333',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  bathroomPassMeta: {
+    color: '#777',
+    fontSize: 12,
+    marginTop: 3,
+  },
+
+  bathroomPassActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  bathroomPassButton: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+
+  bathroomPassUseButton: {
+    backgroundColor: '#34C759',
+  },
+
+  bathroomPassRemoveButton: {
+    backgroundColor: '#FF3B30',
+  },
+
+  bathroomPassButtonText: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 12,
+  },
+  kingCupSoloBox: {
+    backgroundColor: '#fff8e1',
+    borderWidth: 1,
+    borderColor: '#f5c542',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+  },
+
+  kingCupSoloBoxDanger: {
+    backgroundColor: '#ffe8e8',
+    borderColor: '#ff3b30',
+  },
+
+  kingCupSoloHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  kingCupSoloIcon: {
+    fontSize: 34,
+    marginRight: 12,
+  },
+
+  kingCupSoloTextBox: {
+    flex: 1,
+  },
+
+  kingCupSoloTitle: {
+    fontSize: 15,
+    color: '#7a4d00',
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  kingCupSoloCounter: {
+    fontSize: 20,
+    color: '#2b1233',
+    fontWeight: '900',
+    marginTop: 2,
+  },
+
+  kingCupSoloCounterDanger: {
+    color: '#b00020',
+  },
+
+  kingCupSoloDescription: {
+    color: '#7a4d00',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 8,
+    fontWeight: '700',
+  },
+
+  kingCupSoloDescriptionDanger: {
+    color: '#b00020',
   },
 });
 

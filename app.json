@@ -43,7 +43,7 @@
           ]
         }
       ],
-      "package": "com.festhausgame",
+      "package": "com.festhaus.drinkinggame",
       "googleServicesFile": "./google-services.json"
     },
     "plugins": [

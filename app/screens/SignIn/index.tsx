@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,6 +38,9 @@ const SignIn = () => {
     const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
     const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
 
+    console.log('🔎 [SignIn] Google WEB_CLIENT_ID:', webClientId);
+    console.log('🔎 [SignIn] Platform:', Platform.OS);
+
     if (!webClientId) {
       console.warn('⚠️ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID não está configurado no .env');
       return;
@@ -44,7 +48,7 @@ const SignIn = () => {
 
     GoogleSignin.configure({
       webClientId,
-      iosClientId,
+      iosClientId: Platform.OS === 'ios' ? iosClientId : undefined,
       scopes: ['profile', 'email'],
       offlineAccess: false,
     });
