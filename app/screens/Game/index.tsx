@@ -1086,6 +1086,23 @@ const GameScreen = () => {
           }))
           : [];
 
+    const deckPresetsForCurrentMode = isSoloMode
+      ? SOLO_DECK_PRESETS
+      : gameMode === 'bonus'
+        ? BONUS_DECK_PRESETS
+        : NORMAL_DECK_PRESETS;
+
+    const selectedDeckPreset =
+      deckPresetsForCurrentMode.find((preset) => preset.multiplier === deckMultiplier) ||
+      deckPresetsForCurrentMode[0];
+
+    const estimatedCards =
+      gameMode === 'bonus'
+        ? deckMultiplier * 104
+        : deckMultiplier * 52;
+
+    const canEditMatchConfig = isSoloMode || isHost;
+
     return (
       <SafeAreaView style={styles.container}>
         <GameRulesModal
@@ -1155,46 +1172,120 @@ const GameScreen = () => {
                 </Text>
               </View>
             )}
-            {isSoloMode && (
-              <View style={styles.soloSetupBox}>
-                <Text style={styles.soloSetupTitle}>Configuração rápida</Text>
 
-                <Text style={styles.soloSetupLabel}>Quantidade de pessoas</Text>
+            <View style={styles.matchConfigScreen}>
+              <View style={styles.matchConfigHeader}>
+                <Text style={styles.matchConfigEyebrow}>Configuração da partida</Text>
 
-                <View style={styles.soloPlayerGrid}>
-                  {Array.from({ length: 12 }, (_, index) => index + 1).map((count) => (
-                    <TouchableOpacity
-                      key={count}
-                      style={[
-                        styles.soloPlayerButton,
-                        soloPlayerCount === count && styles.soloPlayerButtonActive,
-                      ]}
-                      onPress={() => setSoloPlayerCount(count)}
-                      activeOpacity={0.85}
-                    >
-                      <Text
-                        style={[
-                          styles.soloPlayerButtonText,
-                          soloPlayerCount === count && styles.soloPlayerButtonTextActive,
-                        ]}
-                      >
-                        {count}
+                <Text style={styles.matchConfigTitle}>
+                  {isSoloMode ? 'Monte seu jogo local' : 'Prepare a sala'}
+                </Text>
+
+                <Text style={styles.matchConfigSubtitle}>
+                  {canEditMatchConfig
+                    ? 'Ajuste as regras antes de iniciar.'
+                    : 'Aguardando o host configurar e iniciar a partida.'}
+                </Text>
+              </View>
+
+              <View style={styles.matchConfigCard}>
+                <Text style={styles.matchSectionTitle}>Modo de jogo</Text>
+
+                {canEditMatchConfig ? (
+                  <GameModeSelector gameMode={gameMode} onChange={handleGameModeChange} />
+                ) : (
+                  <View style={styles.readOnlyConfigBox}>
+                    <Text style={styles.readOnlyConfigLabel}>
+                      {currentGameMode === 'bonus' ? 'Com Bônus' : 'Normal'}
+                    </Text>
+                    <Text style={styles.readOnlyConfigText}>
+                      Apenas o host pode alterar o modo de jogo.
+                    </Text>
+                  </View>
+                )}
+
+                {isSoloMode && (
+                  <>
+                    <View style={styles.matchDivider} />
+
+                    <View style={styles.matchSectionHeader}>
+                      <Text style={styles.matchSectionTitle}>Quantidade de pessoas</Text>
+                      <Text style={styles.matchSectionValue}>{soloPlayerCount}</Text>
+                    </View>
+
+                    {canEditMatchConfig ? (
+                      <View style={styles.inlineOptionsWrap}>
+                        {Array.from({ length: 12 }, (_, index) => index + 1).map((count) => (
+                          <TouchableOpacity
+                            key={count}
+                            style={[
+                              styles.inlineOptionButton,
+                              soloPlayerCount === count && styles.inlineOptionButtonActive,
+                            ]}
+                            onPress={() => setSoloPlayerCount(count)}
+                            activeOpacity={0.85}
+                          >
+                            <Text
+                              style={[
+                                styles.inlineOptionText,
+                                soloPlayerCount === count && styles.inlineOptionTextActive,
+                              ]}
+                            >
+                              {count}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    ) : (
+                      <View style={styles.readOnlyConfigBox}>
+                        <Text style={styles.readOnlyConfigLabel}>
+                          {soloPlayerCount} pessoa(s)
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {!isSoloMode && (
+                  <>
+                    <View style={styles.matchDivider} />
+
+                    <View style={styles.matchSectionHeader}>
+                      <Text style={styles.matchSectionTitle}>Jogadores</Text>
+                      <Text style={styles.matchSectionValue}>
+                        {currentPlayers}/{gameManager?.getRoomConfig().maxPlayers || MAX_PLAYERS}
                       </Text>
-                    </TouchableOpacity>
-                  ))}
+                    </View>
+
+                    <Text style={styles.matchHelperText}>
+                      O jogo online precisa de pelo menos {MIN_PLAYERS_TO_START} jogadores para começar.
+                    </Text>
+                  </>
+                )}
+
+                <View style={styles.matchDivider} />
+
+                <View style={styles.matchSectionHeader}>
+                  <Text style={styles.matchSectionTitle}>Quantidade de cartas</Text>
+                  <Text style={styles.matchSectionValue}>
+                    {selectedDeckPreset?.cards || estimatedCards}
+                  </Text>
                 </View>
 
-                <Text style={styles.soloSetupLabel}>Quantidade de cartas</Text>
-
                 <View style={styles.deckPresetList}>
-                  {SOLO_DECK_PRESETS.map((preset) => (
+                  {deckPresetsForCurrentMode.map((preset) => (
                     <TouchableOpacity
-                      key={preset.multiplier}
+                      key={`${gameMode}-${preset.multiplier}`}
                       style={[
                         styles.deckPresetButton,
                         deckMultiplier === preset.multiplier && styles.deckPresetButtonActive,
+                        !canEditMatchConfig && styles.disabledConfigOption,
                       ]}
-                      onPress={() => setDeckMultiplier(preset.multiplier)}
+                      onPress={() => {
+                        if (!canEditMatchConfig) return;
+                        setDeckMultiplier(preset.multiplier);
+                      }}
+                      disabled={!canEditMatchConfig}
                       activeOpacity={0.85}
                     >
                       <View>
@@ -1214,6 +1305,7 @@ const GameScreen = () => {
                           ]}
                         >
                           {preset.cards} cartas
+                          {gameMode === 'bonus' ? ' + coringas' : ''}
                         </Text>
                       </View>
 
@@ -1224,72 +1316,28 @@ const GameScreen = () => {
                   ))}
                 </View>
 
-                <Text style={styles.soloSetupSummary}>
-                  Jogo solo com {soloPlayerCount} pessoa(s) e{' '}
-                  {SOLO_DECK_PRESETS.find((preset) => preset.multiplier === deckMultiplier)?.cards || 52}{' '}
-                  cartas.
+                <Text style={styles.matchConfigSummary}>
+                  {gameMode === 'bonus'
+                    ? `Modo bônus com ${selectedDeckPreset?.cards || estimatedCards} cartas base e coringas extras.`
+                    : `Modo normal com ${selectedDeckPreset?.cards || estimatedCards} cartas.`}
                 </Text>
-              </View>
-            )}
-
-            {isHost && (
-              <>
-                {!isSoloMode && (
-                  <GameModeSelector gameMode={gameMode} onChange={handleGameModeChange} />
-                )}
 
                 {!isSoloMode && (
-                  <View style={styles.onlineSetupBox}>
-                    <Text style={styles.onlineSetupTitle}>Configuração da partida</Text>
-
-                    <Text style={styles.onlineSetupLabel}>Quantidade de cartas</Text>
-
-                    <View style={styles.deckPresetList}>
-                      {(gameMode === 'bonus' ? BONUS_DECK_PRESETS : NORMAL_DECK_PRESETS).map((preset) => (
-                        <TouchableOpacity
-                          key={`${gameMode}-${preset.multiplier}`}
-                          style={[
-                            styles.deckPresetButton,
-                            deckMultiplier === preset.multiplier && styles.deckPresetButtonActive,
-                          ]}
-                          onPress={() => setDeckMultiplier(preset.multiplier)}
-                          activeOpacity={0.85}
-                        >
-                          <View>
-                            <Text
-                              style={[
-                                styles.deckPresetTitle,
-                                deckMultiplier === preset.multiplier && styles.deckPresetTitleActive,
-                              ]}
-                            >
-                              {preset.label}
-                            </Text>
-
-                            <Text
-                              style={[
-                                styles.deckPresetSubtitle,
-                                deckMultiplier === preset.multiplier && styles.deckPresetSubtitleActive,
-                              ]}
-                            >
-                              {preset.cards} cartas
-                              {gameMode === 'bonus' ? ' + coringas' : ''}
-                            </Text>
-                          </View>
-
-                          {deckMultiplier === preset.multiplier && (
-                            <FontAwesome name="check-circle" size={20} color="#fff" />
-                          )}
-                        </TouchableOpacity>
-                      ))}
-                    </View>
+                  <>
+                    <View style={styles.matchDivider} />
 
                     <View style={styles.secretVoteRow}>
                       <TouchableOpacity
                         style={[
                           styles.secretVoteToggle,
                           secretVoteEnabled && styles.secretVoteToggleActive,
+                          !canEditMatchConfig && styles.disabledConfigOption,
                         ]}
-                        onPress={() => setSecretVoteEnabled((prev) => !prev)}
+                        onPress={() => {
+                          if (!canEditMatchConfig) return;
+                          setSecretVoteEnabled((prev) => !prev);
+                        }}
+                        disabled={!canEditMatchConfig}
                         activeOpacity={0.85}
                       >
                         <FontAwesome
@@ -1323,30 +1371,33 @@ const GameScreen = () => {
                         Em empate, todos os empatados bebem. No bônus, coringas guardados aumentam a dose.
                       </Text>
                     )}
-                  </View>
-                )}
-                {!isSoloMode && (
-                  <>
-                    <TouchableOpacity
-                      style={[styles.button, styles.whatsappButton]}
-                      onPress={handleInviteWhatsApp}
-                      activeOpacity={0.8}
-                    >
-                      <FontAwesome name="whatsapp" size={18} color="#fff" />
-                      <Text style={styles.buttonText}>CONVIDAR PELO WHATSAPP</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.button, styles.copyButton]}
-                      onPress={handleCopyInvite}
-                      activeOpacity={0.8}
-                    >
-                      <FontAwesome name="copy" size={18} color="#fff" />
-                      <Text style={styles.buttonText}>COPIAR LINK DA SALA</Text>
-                    </TouchableOpacity>
                   </>
                 )}
+              </View>
 
+              {!isSoloMode && isHost && (
+                <View style={styles.hostInviteBox}>
+                  <TouchableOpacity
+                    style={[styles.button, styles.whatsappButton]}
+                    onPress={handleInviteWhatsApp}
+                    activeOpacity={0.8}
+                  >
+                    <FontAwesome name="whatsapp" size={18} color="#fff" />
+                    <Text style={styles.buttonText}>CONVIDAR PELO WHATSAPP</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.button, styles.copyButton]}
+                    onPress={handleCopyInvite}
+                    activeOpacity={0.8}
+                  >
+                    <FontAwesome name="copy" size={18} color="#fff" />
+                    <Text style={styles.buttonText}>COPIAR LINK DA SALA</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <View style={styles.matchActionsBox}>
                 <TouchableOpacity
                   style={[styles.button, styles.rulesButton]}
                   onPress={() => setShowRules(true)}
@@ -1357,40 +1408,28 @@ const GameScreen = () => {
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[
-                    styles.button,
-                    styles.startButton,
-                    !canStartGame && !isSoloMode && styles.disabledButton,
-                  ]}
-                  onPress={handleStartGame}
-                  disabled={!canStartGame && !isSoloMode}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.buttonText}>
-                    {isSoloMode ? 'COMEÇAR JOGO' : 'COMEÇAR JOGO'}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            {!isHost && !isSoloMode && (
-              <>
-                <TouchableOpacity
-                  style={[styles.button, styles.rulesButton]}
-                  onPress={() => setShowRules(true)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.buttonText}>{shouldShowBonusRules ? 'VER REGRAS E BÔNUS' : 'VER REGRAS'}</Text>
-                </TouchableOpacity>
-
-                <View style={styles.waitingCard}>
-                  <Text style={styles.waitingText}>
-                    Aguardando o host iniciar o jogo...
-                  </Text>
-                </View>
-              </>
-            )}
+                {canEditMatchConfig ? (
+                  <TouchableOpacity
+                    style={[
+                      styles.button,
+                      styles.startButton,
+                      !canStartGame && !isSoloMode && styles.disabledButton,
+                    ]}
+                    onPress={handleStartGame}
+                    disabled={!canStartGame && !isSoloMode}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.buttonText}>COMEÇAR JOGO</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.waitingCard}>
+                    <Text style={styles.waitingText}>
+                      Aguardando o host iniciar o jogo...
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
 
             <TouchableOpacity
               style={[styles.button, styles.dangerButton]}
@@ -1803,8 +1842,9 @@ const styles = StyleSheet.create({
 
   content: {
     flex: 1,
+    width: '100%',
     padding: 20,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
   },
 
@@ -2750,6 +2790,175 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7f1fb',
     borderRadius: 12,
     padding: 10,
+  },
+  matchConfigScreen: {
+    width: '100%',
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+
+  matchConfigHeader: {
+    width: '100%',
+    backgroundColor: '#2b1233',
+    borderRadius: 24,
+    padding: 18,
+    marginBottom: 16,
+  },
+
+  matchConfigEyebrow: {
+    color: '#d8b4fe',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+
+  matchConfigTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  matchConfigSubtitle: {
+    color: '#f3e8ff',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 6,
+  },
+
+  matchConfigCard: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+
+  matchSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  matchSectionTitle: {
+    color: '#2b1233',
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 10,
+  },
+
+  matchSectionValue: {
+    color: '#7c3aed',
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 10,
+  },
+
+  matchDivider: {
+    height: 1,
+    backgroundColor: '#eadcf5',
+    marginVertical: 14,
+  },
+
+  matchHelperText: {
+    color: '#777',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+  },
+
+  matchConfigSummary: {
+    color: '#666',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+    marginTop: 10,
+    textAlign: 'center',
+    backgroundColor: '#f7f1fb',
+    borderRadius: 14,
+    padding: 10,
+  },
+
+  matchActionsBox: {
+    width: '100%',
+    marginBottom: 4,
+  },
+
+  hostInviteBox: {
+    width: '100%',
+    marginBottom: 6,
+  },
+
+  readOnlyConfigBox: {
+    backgroundColor: '#f7f1fb',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#eadcf5',
+  },
+
+  readOnlyConfigLabel: {
+    color: '#2b1233',
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  readOnlyConfigText: {
+    color: '#777',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+
+  inlineOptionsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  inlineOptionButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fafafa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  inlineOptionButtonActive: {
+    backgroundColor: '#8E44AD',
+    borderColor: '#8E44AD',
+  },
+
+  inlineOptionText: {
+    color: '#333',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  inlineOptionTextActive: {
+    color: '#fff',
+  },
+
+  disabledConfigOption: {
+    opacity: 0.55,
   },
 });
 
