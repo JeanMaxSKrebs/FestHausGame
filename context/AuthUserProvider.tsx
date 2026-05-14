@@ -69,6 +69,7 @@ export const AuthUserProvider: React.FC<AuthUserProviderProps> = ({ children }) 
           if (!firebaseUser) {
             setUser(null);
             console.log('ℹ️ Nenhum usuário autenticado');
+            setLoading(false);
             return;
           }
 
@@ -143,14 +144,7 @@ export const AuthUserProvider: React.FC<AuthUserProviderProps> = ({ children }) 
       const credential = await signInWithEmailAndPassword(auth as any, email, senha);
       await storeUserSession(email, senha);
 
-      setUser({
-        uid: credential.user.uid,
-        email: credential.user.email || email,
-        nome: credential.user.displayName || credential.user.email || email,
-        photoURL: credential.user.photoURL || null,
-      });
-
-      console.log('✅ Login realizado:', email);
+      console.log('✅ Login realizado:', credential.user.email || email);
     } catch (error) {
       console.error('Erro ao fazer login:', error);
       throw error;

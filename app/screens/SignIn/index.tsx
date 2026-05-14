@@ -6,7 +6,7 @@ import {
 } from '@react-native-google-signin/google-signin';
 import { useRouter } from 'expo-router';
 import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -31,8 +31,9 @@ const SignIn = () => {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const didNavigateRef = useRef(false);
 
-  const { signIn } = useContext(AuthUserContext);
+  const { signIn, user } = useContext(AuthUserContext);
 
   useEffect(() => {
     const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -55,6 +56,13 @@ const SignIn = () => {
 
     console.log('✅ [SignIn] GoogleSignin configurado');
   }, []);
+
+  useEffect(() => {
+    if (!user || didNavigateRef.current) return;
+
+    didNavigateRef.current = true;
+    router.replace('/screens/Home');
+  }, [user, router]);
 
   const validateInputs = () => {
     if (!email || !senha) {
@@ -83,7 +91,6 @@ const SignIn = () => {
     try {
       setLoading(true);
       await signIn(email.trim(), senha);
-      router.replace('/screens/Home');
     } catch (error: any) {
       switch (error.code) {
         case 'auth/user-not-found':
@@ -136,7 +143,6 @@ const SignIn = () => {
 
       console.log('✅ [SignIn] Firebase OK:', userCredential.user.email);
 
-      router.replace('/screens/Home');
     } catch (error: any) {
       console.error('❌ [SignIn] Erro Google:', error);
 
