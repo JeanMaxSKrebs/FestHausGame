@@ -4,7 +4,7 @@
         {
             "label": "1 - Iniciar Metro Único (8081)",
             "type": "shell",
-            "command": "npx expo start --dev-client -c --port 8081",
+            "command": "npx expo start --dev-client -c --port 8081 --localhost",
             "options": {
                 "cwd": "C:\\FestHausGame"
             },
@@ -15,20 +15,20 @@
                 "clear": true
             }
         },
-        {
-            "label": "2 - Abrir no Emulador",
-            "type": "shell",
-            "command": "adb -s emulator-5554 reverse tcp:8081 tcp:8081; adb -s emulator-5554 shell am start -a android.intent.action.VIEW -d \"festhausgame://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081\"",
-            "options": {
-                "cwd": "C:\\FestHausGame"
-            },
-            "problemMatcher": [],
-            "presentation": {
-                "panel": "new",
-                "group": "apps",
-                "reveal": "always"
-            }
+     {
+        "label": "2 - Abrir no Emulador",
+        "type": "shell",
+        "command": "adb -s emulator-5554 reverse tcp:8081 tcp:8081; adb -s emulator-5554 shell am force-stop com.festhaus.drinkinggame; adb -s emulator-5554 shell am start -a android.intent.action.VIEW -d \"festhausgame://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081\"",
+        "options": {
+            "cwd": "C:\\FestHausGame"
         },
+        "problemMatcher": [],
+        "presentation": {
+            "panel": "new",
+            "group": "apps",
+            "reveal": "always"
+        }
+    },
         {
             "label": "3 - Abrir no Celular (USB)",
             "type": "shell",

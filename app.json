@@ -2,12 +2,13 @@
   "expo": {
     "name": "Fest Haus Game",
     "slug": "FestHausGame",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/logo/logo.png",
     "scheme": "festhausgame",
     "userInterfaceStyle": "automatic",
     "android": {
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#1a1a2e",
         "foregroundImage": "./assets/images/logo/logo.png"
